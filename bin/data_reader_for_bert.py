@@ -182,7 +182,11 @@ class MyDataReader(object):
         print("开始统计主客体的postag类别...")
         with open(train_file, 'r') as f:
             for line in tqdm(f):
-                dic = json.loads(line.strip())
+                try:
+                    dic = json.loads(line.strip())
+                except:
+                    print("one error")
+                    continue
                 for spo in dic['spo_list']:
                     for postag in dic['postag']:
                         if postag['word'] == spo['subject']:
@@ -263,13 +267,13 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/train_demo.json',
+        train_data_list_path='../data/train_data.json',
         dev_data_list_path='../data/dev_demo.json')
 
     # prepare data reader
-    ttt = data_generator.get_train_reader()
-    for index, features in enumerate(ttt()):
-        postag_list, label_list = features
-        # print(input_sent)
-        print('1st features:', len(postag_list), postag_list)
-        print('2nd features:', len(label_list), label_list)
+    # ttt = data_generator.get_train_reader()
+    # for index, features in enumerate(ttt()):
+    #     postag_list, label_list = features
+    #     # print(input_sent)
+    #     print('1st features:', len(postag_list), postag_list)
+    #     print('2nd features:', len(label_list), label_list)
