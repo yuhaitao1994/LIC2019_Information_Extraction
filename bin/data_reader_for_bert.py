@@ -6,6 +6,9 @@ import json
 import os
 import codecs
 import sys
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
 
 
 class MyDataReader(object):
@@ -14,23 +17,20 @@ class MyDataReader(object):
     """
 
     def __init__(self,
-                 wordemb_dict_path,
                  postag_dict_path,
                  label_dict_path,
                  train_data_list_path='',
                  dev_data_list_path=''):
-        self._wordemb_dict_path = wordemb_dict_path
         self._postag_dict_path = postag_dict_path
         self._label_dict_path = label_dict_path
         self.train_data_list_path = train_data_list_path
         self.dev_data_list_path = dev_data_list_path
         self._p_map_eng_dict = {}
         # load dictionary
-        self._dict_path_dict = {'wordemb_dict': self._wordemb_dict_path,
-                                'postag_dict': self._postag_dict_path,
+        self._dict_path_dict = {'postag_dict': self._postag_dict_path,
                                 'label_dict': self._label_dict_path}
         # check if the file exists
-        for input_dict in [wordemb_dict_path, postag_dict_path,
+        for input_dict in [postag_dict_path,
                            label_dict_path, train_data_list_path, dev_data_list_path]:
             if not os.path.exists(input_dict):
                 raise ValueError("%s not found." % (input_dict))
@@ -39,8 +39,6 @@ class MyDataReader(object):
         self._feature_dict = {}
         self._feature_dict['postag_dict'] = \
             self._load_dict_from_file(self._dict_path_dict['postag_dict'])
-        self._feature_dict['wordemb_dict'] = \
-            self._load_dict_from_file(self._dict_path_dict['wordemb_dict'])
         self._feature_dict['label_dict'] = \
             self._load_label_dict(self._dict_path_dict['label_dict'])
         # 将之前所有的字典反向
@@ -53,7 +51,7 @@ class MyDataReader(object):
         # 统计在所有训练数据中主体和客体所覆盖的postag
         # 主体subject，客体object
         self.subject_tags, self.object_tags = self.count_tags(
-            self.train_data_list_path)
+            self.train_data_list_path, self._postag_dict_path)
 
     def _load_label_dict(self, dict_name):
         """load label dict from file"""
@@ -76,7 +74,7 @@ class MyDataReader(object):
                 dict_result[line] = idx + bias
         return dict_result
 
-    def _cal_mark_slot(self, spo_list, sentence):
+    def _cal_mark_single_slot(self, spo_list, sentence):
         """
         Calculate the value of the label 
         """
@@ -103,7 +101,7 @@ class MyDataReader(object):
 
     def _get_feed_iterator(self, line, need_input=False, need_label=True):
         """
-        生成一条数据，应修改为对每一个line生成一个样本列表
+        生成一条数据，应修改为对每一个line生成一个样本列表，其中除了正样本，每个line还生成一个负样本
         """
         # verify that the input format of each line meets the format
         if not self._is_valid_input_data(line):
@@ -113,8 +111,6 @@ class MyDataReader(object):
         sentence = dic['text']
         sentence_term_list = [item['word'] for item in dic['postag']]
         sentence_pos_list = [item['pos'] for item in dic['postag']]
-        sentence_emb_slot = [self._feature_dict['wordemb_dict'].get(w, self._UNK_IDX)
-                             for w in sentence_term_list]
         sentence_pos_slot = [self._feature_dict['postag_dict'].get(pos, self._UNK_IDX)
                              for pos in sentence_pos_list]
         if 'spo_list' not in dic:
@@ -122,10 +118,9 @@ class MyDataReader(object):
         else:
             label_slot = self._cal_mark_slot(dic['spo_list'], sentence)
         # verify that the feature is valid
-        if len(sentence_emb_slot) == 0 or len(sentence_pos_slot) == 0 \
-                or len(label_slot) == 0:
+        if len(sentence_pos_slot) == 0 or len(label_slot) == 0:
             return None
-        feature_slot = [sentence_emb_slot, sentence_pos_slot]
+        feature_slot = [sentence_pos_slot]
         input_fields = json.dumps(dic, ensure_ascii=False)
         output_slot = feature_slot
         if need_input:
@@ -161,11 +156,58 @@ class MyDataReader(object):
 
         return reader
 
-    def count_tags(self, train_file):
+    def count_tags(self, train_file, postag_file):
         """
         统计所有主客体覆盖到的postag类别
         """
-        subject_tags, object_tags = [], []
+        subject_tags, object_tags = {}, {}
+
+        # 如果文件存在
+        if os.path.isfile('../dict/sub_tag') and os.path.isfile('../dict/obj_tag'):
+            with open('../dict/sub_tag', 'r') as fs:
+                for line in fs:
+                    key, value = line.strip().split('\t')
+                    subject_tags[key] = int(value)
+            with open('../dict/obj_tag', 'r') as fo:
+                for line in fo:
+                    key, value = line.strip().split('\t')
+                    object_tags[key] = int(value)
+            return subject_tags, object_tags
+
+        # 如果文件不存在
+        with open(postag_file, 'r') as f:
+            for line in f:
+                tag = line.strip()
+                subject_tags[tag], object_tags[tag] = 0, 0
+        print("开始统计主客体的postag类别...")
+        with open(train_file, 'r') as f:
+            for line in tqdm(f):
+                dic = json.loads(line.strip())
+                for spo in dic['spo_list']:
+                    for postag in dic['postag']:
+                        if postag['word'] == spo['subject']:
+                            subject_tags[postag['pos']] += 1
+                            break
+                    for postag in dic['postag']:
+                        if postag['word'] == spo['object']:
+                            object_tags[postag['pos']] += 1
+                            break
+        s = list(subject_tags.keys())
+        o = list(object_tags.keys())
+        for key in s:
+            if subject_tags[key] == 0:
+                del subject_tags[key]
+        for key in o:
+            if object_tags[key] == 0:
+                del object_tags[key]
+        with open('../dict/sub_tag', 'w') as fs:
+            for key, value in subject_tags.items():
+                fs.write(key + '\t' + str(value) + '\n')
+        with open('../dict/obj_tag', 'w') as fo:
+            for key, value in object_tags.items():
+                fo.write(key + '\t' + str(value) + '\n')
+
+        return subject_tags, object_tags
 
     def get_train_reader(self, need_input=False, need_label=True):
         """Data reader during training"""
@@ -197,13 +239,13 @@ class MyDataReader(object):
 
     def _get_reverse_dict(self, dict_name):
         dict_reverse = {}
-        for key, value in self._feature_dict[dict_name].iteritems():
+        for key, value in self._feature_dict[dict_name].items():
             dict_reverse[value] = key
         return dict_reverse
 
     def _reverse_p_eng(self, dic):
         dict_reverse = {}
-        for key, value in dic.iteritems():
+        for key, value in dic.items():
             dict_reverse[value] = key
         return dict_reverse
 
@@ -218,20 +260,16 @@ class MyDataReader(object):
 
 if __name__ == '__main__':
     # initialize data generator
-    data_generator = RcDataReader(
-        wordemb_dict_path='../dict/word_idx',
+    data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/train_data.json',
-        test_data_list_path='../data/dev_data.json')
+        train_data_list_path='../data/train_demo.json',
+        dev_data_list_path='../data/dev_demo.json')
 
     # prepare data reader
-    ttt = data_generator.get_dev_reader()
+    ttt = data_generator.get_train_reader()
     for index, features in enumerate(ttt()):
-        input_sent, word_idx_list, postag_list, label_list = features
-        print input_sent.encode('utf-8')
-        print '1st features:', len(word_idx_list), word_idx_list
-        print '2nd features:', len(postag_list), postag_list
-        print '3rd features:', len(label_list), '\t', label_list
-        if index > 2:
-            break
+        postag_list, label_list = features
+        # print(input_sent)
+        print('1st features:', len(postag_list), postag_list)
+        print('2nd features:', len(label_list), label_list)
