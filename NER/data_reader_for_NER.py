@@ -50,8 +50,8 @@ class MyDataReader(object):
 
         # 统计在所有训练数据中主体和客体所覆盖的postag
         # 主体subject，客体object
-        self.subject_tags, self.object_tags = self.count_tags(
-            self.train_data_list_path, self._postag_dict_path)
+        # self.subject_tags, self.object_tags = self.count_tags(
+        #     self.train_data_list_path, self._postag_dict_path)
 
     def _load_label_dict(self, dict_name):
         """load label dict from file"""
@@ -109,25 +109,32 @@ class MyDataReader(object):
             return None
         dic = json.loads(line)
         sentence = dic['text']
-        sentence_term_list = [item['word'] for item in dic['postag']]
-        sentence_pos_list = [item['pos'] for item in dic['postag']]
-        sentence_pos_slot = [self._feature_dict['postag_dict'].get(pos, self._UNK_IDX)
-                             for pos in sentence_pos_list]
-        if 'spo_list' not in dic:
-            label_slot = [0] * len(self._feature_dict['label_dict'])
+
+        token_list = []
+        label_list = []
+        for s in sentence:
+            token_list.append(s)
+        if not need_label:
+            return token_list, label_list
         else:
-            label_slot = self._cal_mark_slot(dic['spo_list'], sentence)
-        # verify that the feature is valid
-        if len(sentence_pos_slot) == 0 or len(label_slot) == 0:
-            return None
-        feature_slot = [sentence_pos_slot]
-        input_fields = json.dumps(dic, ensure_ascii=False)
-        output_slot = feature_slot
-        if need_input:
-            output_slot = [input_fields] + output_slot
-        if need_label:
-            output_slot = output_slot + [label_slot]
-        return output_slot
+            label_list = ['O'] * len(token_list)
+            entity_set = set()
+            for spo in dic['spo_list']:
+                entity_set.add(spo['subject'])
+                entity_set.add(spo['object'])
+            for entity in entity_set:
+                try:
+                    index = sentence.index(entity)
+                    for i in range(len(entity)):
+                        if i == 0:
+                            label_list[index + i] = 'B'
+                        elif i == len(entity) - 1:
+                            label_list[index + i] = 'E'
+                        else:
+                            label_list[index + i] = 'I'
+                except:
+                    continue
+            return token_list, label_list
 
     def path_reader(self, data_path, need_input=False, need_label=True):
         """Read data from data_path"""
@@ -140,19 +147,19 @@ class MyDataReader(object):
                 for data_file in input_files:
                     data_file_path = os.path.join(data_path, data_file)
                     for line in open(data_file_path.strip()):
-                        sample_result = self._get_feed_iterator(
+                        token_list, label_list = self._get_feed_iterator(
                             line.strip(), need_input, need_label)
-                        if sample_result is None:
+                        if token_list is None:
                             continue
-                        yield tuple(sample_result)
+                        yield token_list, label_list
             elif os.path.isfile(data_path):
                 for line in open(data_path.strip()):
                     # 对文件每一行生成数据
-                    sample_result = self._get_feed_iterator(
+                    token_list, label_list = self._get_feed_iterator(
                         line.strip(), need_input, need_label)
-                    if sample_result is None:
+                    if token_list is None:
                         continue
-                    yield tuple(sample_result)
+                    yield token_list, label_list
 
         return reader
 
@@ -182,11 +189,7 @@ class MyDataReader(object):
         print("开始统计主客体的postag类别...")
         with open(train_file, 'r') as f:
             for line in tqdm(f):
-                try:
-                    dic = json.loads(line.strip())
-                except:
-                    print("one error")
-                    continue
+                dic = json.loads(line.strip())
                 for spo in dic['spo_list']:
                     for postag in dic['postag']:
                         if postag['word'] == spo['subject']:
@@ -268,12 +271,27 @@ if __name__ == '__main__':
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
         train_data_list_path='../data/train_data.json',
-        dev_data_list_path='../data/dev_demo.json')
+        dev_data_list_path='../data/dev_data.json')
 
     # prepare data reader
-    # ttt = data_generator.get_train_reader()
-    # for index, features in enumerate(ttt()):
-    #     postag_list, label_list = features
-    #     # print(input_sent)
-    #     print('1st features:', len(postag_list), postag_list)
-    #     print('2nd features:', len(label_list), label_list)
+    train = data_generator.get_train_reader()
+    with open("./NER_data/train.txt", 'w') as f:
+        for token_list, label_list in tqdm(train()):
+            for i in range(len(token_list)):
+                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
+            f.write('\n')
+
+    dev = data_generator.get_dev_reader()
+    with open("./NER_data/dev.txt", 'w') as f:
+        for token_list, label_list in tqdm(dev()):
+            for i in range(len(token_list)):
+                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
+            f.write('\n')
+
+    test = data_generator.get_test_reader(
+        test_file_path='../data/test1_data_postag.json')
+    with open("./NER_data/test.txt", 'w') as f:
+        for token_list, label_list in tqdm(test()):
+            for i in range(len(token_list)):
+                f.write(str(token_list[i])+'\n')
+            f.write('\n')
