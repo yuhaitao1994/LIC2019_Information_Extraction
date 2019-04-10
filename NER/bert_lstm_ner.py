@@ -21,6 +21,7 @@ import pickle
 import sys
 
 import tf_metrics
+import conlleval
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
 from models import create_model, InputFeatures, InputExample
@@ -703,7 +704,6 @@ def train(args):
 
         with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
             result_to_pair(writer)
-        from bert_base.train import conlleval
         eval_result = conlleval.return_report(output_predict_file)
         print(''.join(eval_result))
         # 写结果到文件中
@@ -719,9 +719,9 @@ if __name__ == '__main__':
     执行
     """
     args = get_args_parser()
-    if True:
-        param_str = '\n'.join(['%20s = %s' % (k, v)
-                               for k, v in sorted(vars(args).items())])
-        print('usage: %s\n%20s   %s\n%s\n%s\n' %
-              (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
+    # if True:
+    #     param_str = '\n'.join(['%20s = %s' % (k, v)
+    #                            for k, v in sorted(vars(args).items())])
+    #     print('usage: %s\n%20s   %s\n%s\n%s\n' %
+    #           (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
     train(args=args)

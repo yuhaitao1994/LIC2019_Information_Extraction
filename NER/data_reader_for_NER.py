@@ -115,6 +115,7 @@ class MyDataReader(object):
         for s in sentence:
             token_list.append(s)
         if not need_label:
+            label_list = ['X'] * len(token_list)
             return token_list, label_list
         else:
             label_list = ['O'] * len(token_list)
@@ -293,5 +294,5 @@ if __name__ == '__main__':
     with open("./NER_data/test.txt", 'w') as f:
         for token_list, label_list in tqdm(test()):
             for i in range(len(token_list)):
-                f.write(str(token_list[i])+'\n')
+                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
             f.write('\n')

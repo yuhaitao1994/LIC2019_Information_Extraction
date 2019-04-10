@@ -47,7 +47,7 @@ def get_args_parser():
                         help='Total batch size for training, eval and predict.')
     group2.add_argument('-learning_rate', type=float, default=1e-5,
                         help='The initial learning rate for Adam.')
-    group2.add_argument('-num_train_epochs', type=float, default=10,
+    group2.add_argument('-num_train_epochs', type=float, default=5,
                         help='Total number of training epochs to perform.')
     group2.add_argument('-dropout_rate', type=float, default=0.5,
                         help='Dropout rate')
