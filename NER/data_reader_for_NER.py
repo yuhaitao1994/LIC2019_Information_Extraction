@@ -274,7 +274,7 @@ if __name__ == '__main__':
         train_data_list_path='../data/train_data.json',
         dev_data_list_path='../data/dev_data.json')
 
-    # prepare data reader
+    prepare data reader
     train = data_generator.get_train_reader()
     with open("./NER_data/train.txt", 'w') as f:
         for token_list, label_list in tqdm(train()):
