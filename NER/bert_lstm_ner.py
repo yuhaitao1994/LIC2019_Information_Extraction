@@ -27,6 +27,8 @@ from bert.bert_code import modeling, optimization, tokenization
 from models import create_model, InputFeatures, InputExample
 from train_helper import get_args_parser
 
+tf.logging.set_verbosity(tf.logging.INFO)
+
 __version__ = '0.1.0'
 
 __all__ = ['__version__', 'DataProcessor', 'NerProcessor', 'write_tokens', 'convert_single_example',
@@ -166,6 +168,9 @@ class NerProcessor(DataProcessor):
 
 
 def write_tokens(tokens, output_dir, mode):
+    """
+    注：生成这个文件的作用是什么
+    """
     """
     将序列解析结果写入到文件中
     只在mode=test的时候启用
@@ -498,7 +503,10 @@ def adam_filter(model_path):
     saver.save(sess, os.path.join(model_path, 'model.ckpt'))
 
 
-def train(args):
+def main(args):
+    """
+    主函数
+    """
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
 
     processors = {
@@ -535,6 +543,7 @@ def train(args):
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
+    # 创建ner dataprocessor对象
     processor = processors[args.ner](args.output_dir)
 
     tokenizer = tokenization.FullTokenizer(
@@ -546,6 +555,7 @@ def train(args):
         intra_op_parallelism_threads=0,
         allow_soft_placement=True)
 
+    # estimator配置，需要研究一下
     run_config = tf.estimator.RunConfig(
         model_dir=args.output_dir,
         save_summary_steps=500,
@@ -558,6 +568,7 @@ def train(args):
     num_train_steps = None
     num_warmup_steps = None
 
+    # 训练与验证
     if args.do_train and args.do_eval:
         # 加载训练数据
         train_examples = processor.get_train_examples(args.data_dir)
@@ -567,6 +578,7 @@ def train(args):
             raise AttributeError('training data is so small...')
         num_warmup_steps = int(num_train_steps * args.warmup_proportion)
 
+        # 如何将日志信息打印到文件？
         tf.logging.info("***** Running training *****")
         tf.logging.info("  Num examples = %d", len(train_examples))
         tf.logging.info("  Batch size = %d", args.batch_size)
@@ -574,7 +586,6 @@ def train(args):
 
         eval_examples = processor.get_dev_examples(args.data_dir)
 
-        # 打印验证集数据信息
         tf.logging.info("***** Running evaluation *****")
         tf.logging.info("  Num examples = %d", len(eval_examples))
         tf.logging.info("  Batch size = %d", args.batch_size)
@@ -642,6 +653,7 @@ def train(args):
         eval_spec = tf.estimator.EvalSpec(input_fn=eval_input_fn)
         tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
 
+    # 预测结果
     if args.do_predict:
         token_path = os.path.join(args.output_dir, "token_test.txt")
         if os.path.exists(token_path):
@@ -709,6 +721,29 @@ def train(args):
         # 写结果到文件中
         with codecs.open(os.path.join(args.output_dir, 'predict_score.txt'), 'a', encoding='utf-8') as fd:
             fd.write(''.join(eval_result))
+
+        # 在predict的时候同时需输出train和dev集的结果，因为需要后一步的生成负样本数据
+        token_path_t = os.path.join(args.output_dir, "token_train.txt")
+        token_path_d = os.path.join(args.output_dir, "token_dev.txt")
+        # 再把train和dev集也输出
+        train_file = os.path.join(args.output_dir, "train.tf_record")
+        eval_file = os.path.join(args.output_dir, "eval.tf_record")
+        predict_input_fn_t = file_based_input_fn_builder(
+            input_file=train_file,
+            seq_length=args.max_seq_length,
+            is_training=False,
+            drop_remainder=False)
+        predict_input_fn_d = file_based_input_fn_builder(
+            input_file=eval_file,
+            seq_length=args.max_seq_length,
+            is_training=False,
+            drop_remainder=False)
+        result_t = estimator.predict(input_fn=predict_input_fn_t)
+        output_t_file = os.path.join(args.output_dir, "label_train.txt")
+        result_d = estimator.predict(input_fn=predict_input_fn_d)
+        output_d_file = os.path.join(args.output_dir, "label_dev.txt")
+
+
     # filter model
     if args.filter_adam_var:
         adam_filter(args.output_dir)
@@ -724,4 +759,4 @@ if __name__ == '__main__':
     #                            for k, v in sorted(vars(args).items())])
     #     print('usage: %s\n%20s   %s\n%s\n%s\n' %
     #           (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
-    train(args=args)
+    main(args=args)
