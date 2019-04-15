@@ -77,7 +77,7 @@ class DataProcessor(object):
             return lines
 
 
-class NerProcessor(DataProcessor):
+class RCProcessor(DataProcessor):
     def __init__(self, output_dir):
         self.labels = set()
         self.output_dir = output_dir

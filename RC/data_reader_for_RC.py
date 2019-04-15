@@ -20,11 +20,15 @@ class MyDataReader(object):
                  postag_dict_path,
                  label_dict_path,
                  train_data_list_path='',
-                 dev_data_list_path=''):
+                 dev_data_list_path='',
+                 train_ner_file='',
+                 dev_ner_file=''):
         self._postag_dict_path = postag_dict_path
         self._label_dict_path = label_dict_path
         self.train_data_list_path = train_data_list_path
         self.dev_data_list_path = dev_data_list_path
+        self.train_ner_file = train_ner_file
+        self.dev_ner_file = dev_ner_file
         self._p_map_eng_dict = {}
         # load dictionary
         self._dict_path_dict = {'postag_dict': self._postag_dict_path,
@@ -143,24 +147,13 @@ class MyDataReader(object):
 
         def reader():
             """Generator"""
-            if os.path.isdir(data_path):
-                input_files = os.listdir(data_path)
-                for data_file in input_files:
-                    data_file_path = os.path.join(data_path, data_file)
-                    for line in open(data_file_path.strip()):
-                        token_list, label_list = self._get_feed_iterator(
-                            line.strip(), need_input, need_label)
-                        if token_list is None:
-                            continue
-                        yield token_list, label_list
-            elif os.path.isfile(data_path):
-                for line in open(data_path.strip()):
-                    # 对文件每一行生成数据
-                    token_list, label_list = self._get_feed_iterator(
-                        line.strip(), need_input, need_label)
-                    if token_list is None:
-                        continue
-                    yield token_list, label_list
+            for line in open(data_path.strip()):
+                # 对文件每一行生成数据
+                token_list, label_list = self._get_feed_iterator(
+                    line.strip(), need_input, need_label)
+                if token_list is None:
+                    continue
+                yield token_list, label_list
 
         return reader
 
@@ -272,18 +265,20 @@ if __name__ == '__main__':
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
         train_data_list_path='../data/train_data.json',
-        dev_data_list_path='../data/dev_data.json')
+        dev_data_list_path='../data/dev_data.json',
+        train_ner_file='../data/label_train.txt',
+        dev_ner_file='../data/label_dev.txt')
 
     # prepare data reader
     train = data_generator.get_train_reader()
-    with open("./NER_data/train.txt", 'w') as f:
+    with open("./RC_data/train.txt", 'w') as f:
         for token_list, label_list in tqdm(train()):
             for i in range(len(token_list)):
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
             f.write('\n')
 
     dev = data_generator.get_dev_reader()
-    with open("./NER_data/dev.txt", 'w') as f:
+    with open("./RC_data/dev.txt", 'w') as f:
         for token_list, label_list in tqdm(dev()):
             for i in range(len(token_list)):
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
@@ -291,7 +286,7 @@ if __name__ == '__main__':
 
     test = data_generator.get_test_reader(
         test_file_path='../data/test1_data_postag.json')
-    with open("./NER_data/test.txt", 'w') as f:
+    with open("./RC_data/test.txt", 'w') as f:
         for token_list, label_list in tqdm(test()):
             for i in range(len(token_list)):
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
