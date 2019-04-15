@@ -521,6 +521,7 @@ def main(args):
 
     # 在re train 的时候，才删除上一轮产出的文件，在predicted 的时候不做clean
     if args.clean and args.do_train:
+        print('hahaha')
         if os.path.exists(args.output_dir):
             def del_file(path):
                 ls = os.listdir(path)
@@ -753,9 +754,9 @@ if __name__ == '__main__':
     执行
     """
     args = get_args_parser()
-    # if True:
-    #     param_str = '\n'.join(['%20s = %s' % (k, v)
-    #                            for k, v in sorted(vars(args).items())])
-    #     print('usage: %s\n%20s   %s\n%s\n%s\n' %
-    #           (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
+    if True:
+        param_str = '\n'.join(['%20s = %s' % (k, v)
+                               for k, v in sorted(vars(args).items())])
+        print('usage: %s\n%20s   %s\n%s\n%s\n' %
+              (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
     main(args=args)

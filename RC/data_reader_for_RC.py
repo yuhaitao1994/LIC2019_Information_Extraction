@@ -6,6 +6,8 @@ import json
 import os
 import codecs
 import sys
+import re
+import random
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -43,8 +45,9 @@ class MyDataReader(object):
         self._feature_dict = {}
         self._feature_dict['postag_dict'] = \
             self._load_dict_from_file(self._dict_path_dict['postag_dict'])
-        self._feature_dict['label_dict'] = \
+        self._feature_dict['label_dict'], self.label_eng_dict = \
             self._load_label_dict(self._dict_path_dict['label_dict'])
+        print(self.label_eng_dict)
         # 将之前所有的字典反向
         self._reverse_dict = {name: self._get_reverse_dict(name) for name in
                               self._dict_path_dict.keys()}
@@ -60,12 +63,15 @@ class MyDataReader(object):
     def _load_label_dict(self, dict_name):
         """load label dict from file"""
         label_dict = {}
+        label_to_eng = {}
+        pattern = re.compile(r'\s+')
         with codecs.open(dict_name, 'r', 'utf-8') as fr:
             for idx, line in enumerate(fr):
-                p, p_eng = line.strip().split('\t')
+                p, p_eng = re.split(pattern, line.strip())
+                label_to_eng[p] = p_eng
                 label_dict[p_eng] = idx
                 self._p_map_eng_dict[p] = p_eng
-        return label_dict
+        return label_dict, label_to_eng
 
     def _load_dict_from_file(self, dict_name, bias=0):
         """
@@ -103,124 +109,158 @@ class MyDataReader(object):
                 return False
         return True
 
-    def _get_feed_iterator(self, line, need_input=False, need_label=True):
+    def _get_feed_iterator(self, line, ner_data, label_dict, mode=None):
         """
-        生成一条数据，应修改为对每一个line生成一个样本列表，其中除了正样本，每个line还生成一个负样本
+        生成RC数据
         """
         # verify that the input format of each line meets the format
         if not self._is_valid_input_data(line):
-            print >> sys.stderr, 'Format is error'
+            print(line)
+            print(sys.stderr, 'Format is error')
             return None
         dic = json.loads(line)
-        sentence = dic['text']
+        sentence = ner_data['text']
+        # 注意sentence的长度被截断过
+        if sentence != ''.join(dic['text'].split(' '))[0:len(sentence)]:
+            print(sentence, dic['text'])
+            raise ValueError
 
-        token_list = []
-        label_list = []
-        for s in sentence:
-            token_list.append(s)
-        if not need_label:
-            label_list = ['X'] * len(token_list)
-            return token_list, label_list
-        else:
-            label_list = ['O'] * len(token_list)
-            entity_set = set()
+        # 一个样本： text 主体 客体 类别
+        sample_list = []
+        if mode == 'train':
+            real_entity = []
+            fake_entity = []
+            # 生成positive sample
+            i = 0
             for spo in dic['spo_list']:
-                entity_set.add(spo['subject'])
-                entity_set.add(spo['object'])
-            for entity in entity_set:
-                try:
-                    index = sentence.index(entity)
-                    for i in range(len(entity)):
-                        if i == 0:
-                            label_list[index + i] = 'B'
-                        elif i == len(entity) - 1:
-                            label_list[index + i] = 'E'
-                        else:
-                            label_list[index + i] = 'I'
-                except:
-                    continue
-            return token_list, label_list
+                sub = spo['subject']
+                obj = spo['object']
+                real_entity.append(sub)
+                real_entity.append(obj)
+                sample_list.append(
+                    sentence + '\t' + sub + '\t' + obj + '\t' + label_dict[spo['predicate']])
+                if i % 2 == 0:
+                    sample_list.append(
+                        sentence + '\t' + obj + '\t' + sub + '\t' + label_dict['木有关系'])
+                i += 1
+            # 生成Negative sample
+            # 统计假实体
+            i = 0
+            start = -1
+            end = 0
+            while i < len(ner_data['label']):
+                if ner_data['label'][i] == 'B':
+                    start = i
+                elif ner_data['label'][i] == 'E':
+                    end = i
+                    if start != -1:
+                        if ''.join(ner_data['label'][start:end + 1]) not in real_entity:
+                            fake_entity.append(
+                                ''.join(ner_data['label'][start:end + 1]))
+                elif ner_data['label'][i] == 'O':
+                    start = -1
+                i += 1
+            # 控制一半的假实体与真实体组成几个negative sample
+            if len(fake_entity) > 0:
+                i = 0
+                for f_e in fake_entity:
+                    random.shuffle(real_entity)
+                    if i % 2 == 0:
+                        sample_list.append(
+                            sentence + '\t' + f_e + '\t' + real_entity[0] + '\t' + label_dict['木有关系'])
+                    else:
+                        sample_list.append(
+                            sentence + '\t' + real_entity[0] + '\t' + f_e + '\t' + label_dict['木有关系'])
+                    i += 1
+                    if i > int(len(fake_entity) / 2):
+                        break
 
-    def path_reader(self, data_path, need_input=False, need_label=True):
+        else:
+            entity = []
+            i = 0
+            start = -1
+            end = 0
+            while i < len(ner_data['label']):
+                if ner_data['label'][i] == 'B':
+                    start = i
+                elif ner_data['label'][i] == 'E':
+                    end = i
+                    if start != -1:
+                        if ''.join(ner_data['label'][start:end + 1]) not in entity:
+                            entity.append(
+                                ''.join(ner_data['label'][start:end + 1]))
+                elif ner_data['label'][i] == 'O':
+                    start = -1
+                i += 1
+
+            if mode == 'dev':
+                for i in range(len(entity)):
+                    for j in range(len(entity)):
+                        if i == j:
+                            continue
+                        else:
+                            flag = 0
+                            for spo in dic['spo_list']:
+                                if spo['subject'] == entity[i] and spo['object'] == entity[j]:
+                                    sample_list.append(
+                                        sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
+                                    flag = 1
+                                    break
+                            if flag == 0:
+                                sample_list.append(
+                                    sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['木有关系'])
+
+            elif mode == 'test':
+                for i in range(len(entity)):
+                    for j in range(len(entity)):
+                        if i == j:
+                            continue
+                        else:
+                            sample_list.append(
+                                sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['木有关系'])
+
+        return sample_list
+
+    def path_reader(self, data_path, ner_path, mode):
         """Read data from data_path"""
         self._feature_dict['data_keylist'] = []
 
         def reader():
             """Generator"""
+            f_ner = open(ner_path, 'r')
             for line in open(data_path.strip()):
+                # 选择ner输出文件的一条数据，即text和标注label
+                ner_data = {"text": '', "label": []}
+                ner_line = f_ner.readline()
+                while ner_line.strip():
+                    item = ner_line.split(' ')
+                    if len(item) != 3:
+                        print(item)
+                        raise ValueError
+                    ner_data['text'] += item[0]
+                    ner_data['label'].append(item[2])
+                    ner_line = f_ner.readline()
+
                 # 对文件每一行生成数据
-                token_list, label_list = self._get_feed_iterator(
-                    line.strip(), need_input, need_label)
-                if token_list is None:
+                sample_list = self._get_feed_iterator(
+                    line.strip(), ner_data, label_dict=self.label_eng_dict, mode=mode)
+                if sample_list is None:
                     continue
-                yield token_list, label_list
+                yield sample_list
 
         return reader
 
-    def count_tags(self, train_file, postag_file):
-        """
-        统计所有主客体覆盖到的postag类别
-        """
-        subject_tags, object_tags = {}, {}
-
-        # 如果文件存在
-        if os.path.isfile('../dict/sub_tag') and os.path.isfile('../dict/obj_tag'):
-            with open('../dict/sub_tag', 'r') as fs:
-                for line in fs:
-                    key, value = line.strip().split('\t')
-                    subject_tags[key] = int(value)
-            with open('../dict/obj_tag', 'r') as fo:
-                for line in fo:
-                    key, value = line.strip().split('\t')
-                    object_tags[key] = int(value)
-            return subject_tags, object_tags
-
-        # 如果文件不存在
-        with open(postag_file, 'r') as f:
-            for line in f:
-                tag = line.strip()
-                subject_tags[tag], object_tags[tag] = 0, 0
-        print("开始统计主客体的postag类别...")
-        with open(train_file, 'r') as f:
-            for line in tqdm(f):
-                dic = json.loads(line.strip())
-                for spo in dic['spo_list']:
-                    for postag in dic['postag']:
-                        if postag['word'] == spo['subject']:
-                            subject_tags[postag['pos']] += 1
-                            break
-                    for postag in dic['postag']:
-                        if postag['word'] == spo['object']:
-                            object_tags[postag['pos']] += 1
-                            break
-        s = list(subject_tags.keys())
-        o = list(object_tags.keys())
-        for key in s:
-            if subject_tags[key] == 0:
-                del subject_tags[key]
-        for key in o:
-            if object_tags[key] == 0:
-                del object_tags[key]
-        with open('../dict/sub_tag', 'w') as fs:
-            for key, value in subject_tags.items():
-                fs.write(key + '\t' + str(value) + '\n')
-        with open('../dict/obj_tag', 'w') as fo:
-            for key, value in object_tags.items():
-                fo.write(key + '\t' + str(value) + '\n')
-
-        return subject_tags, object_tags
-
-    def get_train_reader(self, need_input=False, need_label=True):
+    def get_train_reader(self, mode='train'):
         """Data reader during training"""
-        return self.path_reader(self.train_data_list_path, need_input, need_label)
+        return self.path_reader(self.train_data_list_path, self.train_ner_file, mode)
 
-    def get_dev_reader(self, need_input=True, need_label=True):
+    def get_dev_reader(self, mode='dev'):
         """Data reader during dev"""
-        return self.path_reader(self.dev_data_list_path, need_input, need_label)
+        return self.path_reader(self.dev_data_list_path, self.dev_ner_file, mode)
 
-    def get_test_reader(self, test_file_path='', need_input=True, need_label=False):
+    def get_test_reader(self, test_file_path='', test_ner_file='', mode='test'):
         """Data reader during predict"""
-        return self.path_reader(test_file_path, need_input, need_label)
+        return self.path_reader(test_file_path, test_ner_file, mode)
 
     def get_dict(self, dict_name):
         """Return dict"""
@@ -272,22 +312,22 @@ if __name__ == '__main__':
     # prepare data reader
     train = data_generator.get_train_reader()
     with open("./RC_data/train.txt", 'w') as f:
-        for token_list, label_list in tqdm(train()):
-            for i in range(len(token_list)):
-                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
+        for sample_list in tqdm(train()):
+            for sample in sample_list:
+                f.write(sample + '\n')
             f.write('\n')
 
     dev = data_generator.get_dev_reader()
     with open("./RC_data/dev.txt", 'w') as f:
-        for token_list, label_list in tqdm(dev()):
-            for i in range(len(token_list)):
-                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
+        for sample_list in tqdm(dev()):
+            for sample in sample_list:
+                f.write(sample + '\n')
             f.write('\n')
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/test1_data_postag.json')
+        test_file_path='../data/test1_data_postag.json', test_ner_file='../data/label_test.txt')
     with open("./RC_data/test.txt", 'w') as f:
-        for token_list, label_list in tqdm(test()):
-            for i in range(len(token_list)):
-                f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
+        for sample_list in tqdm(test()):
+            for sample in sample_list:
+                f.write(sample + '\n')
             f.write('\n')
