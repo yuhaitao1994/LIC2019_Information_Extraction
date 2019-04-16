@@ -597,7 +597,7 @@ def main(args):
         learning_rate=args.learning_rate,
         num_train_steps=num_train_steps,
         num_warmup_steps=num_warmup_steps,
-        args=args)
+        args=args) # 这个numlabels为什么要加1，要研究一下
 
     params = {
         'batch_size': args.batch_size

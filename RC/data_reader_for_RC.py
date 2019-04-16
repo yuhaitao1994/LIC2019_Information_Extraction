@@ -117,7 +117,7 @@ class MyDataReader(object):
         if not self._is_valid_input_data(line):
             print(line)
             print(sys.stderr, 'Format is error')
-            return None
+            raise ValueError
         dic = json.loads(line)
         sentence = ner_data['text']
         # 注意sentence的长度被截断过
@@ -202,7 +202,7 @@ class MyDataReader(object):
                         else:
                             flag = 0
                             for spo in dic['spo_list']:
-                                if spo['subject'] == entity[i] and spo['object'] == entity[j]:
+                                if spo['subject'] in entity[i] and spo['object'] in entity[j]:
                                     sample_list.append(
                                         sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
                                     flag = 1
@@ -236,22 +236,19 @@ class MyDataReader(object):
                 ner_line = f_ner.readline()
                 while ner_line.strip():
                     item = ner_line.strip().split(' ')
-                    if len(item) != 2:
+                    if len(item) != 3:
                         print(item)
                         raise ValueError
                     ner_data['text'] += item[0]
-                    ner_data['label'].append(item[1])
+                    ner_data['label'].append(item[2])
                     ner_line = f_ner.readline()
 
                 # 对文件每一行生成数据
                 sample_list = self._get_feed_iterator(
                     line.strip(), ner_data, label_dict=self.label_eng_dict, mode=mode)
-                # if sample_list is None:
-                #     line = f.readline()
-                #     sample_list = self._get_feed_iterator(
-                #         line.strip(), ner_data, label_dict=self.label_eng_dict, mode=mode)
-                # if sample_list is None:
-                #     continue
+
+                if sample_list is None:
+                    continue
                 yield sample_list
 
         return reader
@@ -312,15 +309,15 @@ if __name__ == '__main__':
         label_dict_path='../dict/p_eng',
         train_data_list_path='../data/train_data.json',
         dev_data_list_path='../data/dev_data.json',
-        train_ner_file='../data/train.txt',
+        train_ner_file='../data/label_train.txt',
         dev_ner_file='../data/label_dev.txt')
 
     # prepare data reader
-    train = data_generator.get_train_reader()
-    with open("./RC_data/train.txt", 'w') as f:
-        for sample_list in tqdm(train()):
-            for sample in sample_list:
-                f.write(sample + '\n')
+    # train = data_generator.get_train_reader()
+    # with open("./RC_data/train.txt", 'w') as f:
+    #     for sample_list in tqdm(train()):
+    #         for sample in sample_list:
+    #             f.write(sample + '\n')
 
     dev = data_generator.get_dev_reader()
     with open("./RC_data/dev.txt", 'w') as f:
@@ -328,9 +325,9 @@ if __name__ == '__main__':
             for sample in sample_list:
                 f.write(sample + '\n')
 
-    test = data_generator.get_test_reader(
-        test_file_path='../data/test1_data_postag.json', test_ner_file='../data/label_test.txt')
-    with open("./RC_data/test.txt", 'w') as f:
-        for sample_list in tqdm(test()):
-            for sample in sample_list:
-                f.write(sample + '\n')
+    # test = data_generator.get_test_reader(
+    #     test_file_path='../data/test1_data_postag.json', test_ner_file='../data/label_test.txt')
+    # with open("./RC_data/test.txt", 'w') as f:
+    #     for sample_list in tqdm(test()):
+    #         for sample in sample_list:
+    #             f.write(sample + '\n')

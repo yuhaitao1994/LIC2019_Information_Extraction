@@ -8,7 +8,7 @@
 """
 
 import sys
-from lstm_crf_layer import BLSTM_CRF
+import tensorflow as tf
 from tensorflow.contrib.layers.python.layers import initializers
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
@@ -25,7 +25,7 @@ class Model(object):
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
 
-    def __init__(self, guid=None, text=None, label=None):
+    def __init__(self, guid, text_a, text_b=None, label=None):
         """Constructs a InputExample.
         Args:
           guid: Unique id for the example.
@@ -35,19 +35,19 @@ class InputExample(object):
             specified for train and dev examples, but not for test examples.
         """
         self.guid = guid
-        self.text = text
+        self.text_a = text_a
+        self.text_b = text_b
         self.label = label
 
 
 class InputFeatures(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, label_ids, ):
+    def __init__(self, input_ids, input_mask, segment_ids, label_id, ):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
-        self.label_ids = label_ids
-        # self.label_mask = label_mask
+        self.label_id = label_id
 
 
 class DataProcessor(object):
@@ -66,47 +66,7 @@ class DataProcessor(object):
         raise NotImplementedError()
 
 
-def create_model(bert_config, is_training, input_ids, input_mask,
-                 segment_ids, labels, num_labels, use_one_hot_embeddings,
-                 dropout_rate=1.0, lstm_size=1, cell='lstm', num_layers=1):
-    """
-    创建X模型
-    :param bert_config: bert 配置
-    :param is_training:
-    :param input_ids: 数据的idx 表示
-    :param input_mask:
-    :param segment_ids:
-    :param labels: 标签的idx 表示
-    :param num_labels: 类别数量
-    :param use_one_hot_embeddings:
-    :return:
-    """
-    # 使用数据加载BertModel,获取对应的字embedding
-    import tensorflow as tf
-    model = modeling.BertModel(
-        config=bert_config,
-        is_training=is_training,
-        input_ids=input_ids,
-        input_mask=input_mask,
-        token_type_ids=segment_ids,
-        use_one_hot_embeddings=use_one_hot_embeddings
-    )
-    # 获取对应的embedding 输入数据[batch_size, seq_length, embedding_size]
-    embedding = model.get_sequence_output()
-    max_seq_length = embedding.shape[1].value
-    # 算序列真实长度
-    used = tf.sign(tf.abs(input_ids))
-    # [batch_size] 大小的向量，包含了当前batch中的序列长度
-    lengths = tf.reduce_sum(used, reduction_indices=1)
-    # 添加CRF output layer
-    blstm_crf = BLSTM_CRF(embedded_chars=embedding, hidden_unit=lstm_size, cell_type=cell, num_layers=num_layers,
-                          dropout_rate=dropout_rate, initializers=initializers, num_labels=num_labels,
-                          seq_length=max_seq_length, labels=labels, lengths=lengths, is_training=is_training)
-    rst = blstm_crf.add_blstm_crf_layer(crf_only=True)
-    return rst
-
-
-def create_classification_model(bert_config, is_training, input_ids, input_mask, segment_ids, labels, num_labels):
+def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, labels, num_labels):
     """
 
     :param bert_config:
@@ -119,7 +79,6 @@ def create_classification_model(bert_config, is_training, input_ids, input_mask,
     :param use_one_hot_embedding:
     :return:
     """
-    import tensorflow as tf
     # 通过传入的训练数据，进行representation
     model = modeling.BertModel(
         config=bert_config,
@@ -129,21 +88,14 @@ def create_classification_model(bert_config, is_training, input_ids, input_mask,
         token_type_ids=segment_ids,
     )
 
-    embedding_layer = model.get_sequence_output()
+    # In the demo, we are doing a simple classification task on the entire
+    # segment.
+    #
+    # If you want to use the token-level output, use model.get_sequence_output()
+    # instead.
     output_layer = model.get_pooled_output()
-    hidden_size = output_layer.shape[-1].value
 
-    # predict = CNN_Classification(embedding_chars=embedding_layer,
-    #                                labels=labels,
-    #                                num_tags=num_labels,
-    #                                sequence_length=FLAGS.max_seq_length,
-    #                                embedding_dims=embedding_layer.shape[-1].value,
-    #                                vocab_size=0,
-    #                                filter_sizes=[3, 4, 5],
-    #                                num_filters=3,
-    #                                dropout_keep_prob=FLAGS.dropout_keep_prob,
-    #                                l2_reg_lambda=0.001)
-    # loss, predictions, probabilities = predict.add_cnn_layer()
+    hidden_size = output_layer.shape[-1].value
 
     output_weights = tf.get_variable(
         "output_weights", [num_labels, hidden_size],
@@ -162,16 +114,12 @@ def create_classification_model(bert_config, is_training, input_ids, input_mask,
         probabilities = tf.nn.softmax(logits, axis=-1)
         log_probs = tf.nn.log_softmax(logits, axis=-1)
 
-        if labels is not None:
-            one_hot_labels = tf.one_hot(
-                labels, depth=num_labels, dtype=tf.float32)
+        one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
 
-            per_example_loss = - \
-                tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
-            loss = tf.reduce_mean(per_example_loss)
-        else:
-            loss, per_example_loss = None, None
-    return (loss, per_example_loss, logits, probabilities)
+        per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
+        loss = tf.reduce_mean(per_example_loss)
+
+        return (loss, per_example_loss, logits, probabilities)
 
 
 def decode_labels(labels, batch_size):
