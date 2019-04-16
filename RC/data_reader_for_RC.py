@@ -121,8 +121,9 @@ class MyDataReader(object):
         dic = json.loads(line)
         sentence = ner_data['text']
         # 注意sentence的长度被截断过
-        if sentence != ''.join(dic['text'].split(' '))[0:len(sentence)]:
-            print(sentence, dic['text'])
+        sentence_ori = ''.join(s.strip() for s in dic['text'].split())
+        if sentence != sentence_ori[0:len(sentence)]:
+            print(sentence, sentence_ori)
             raise ValueError
 
         # 一个样本： text 主体 客体 类别
@@ -154,9 +155,9 @@ class MyDataReader(object):
                 elif ner_data['label'][i] == 'E':
                     end = i
                     if start != -1:
-                        if ''.join(ner_data['label'][start:end + 1]) not in real_entity:
+                        if ''.join(ner_data['text'][start:end + 1]) not in real_entity:
                             fake_entity.append(
-                                ''.join(ner_data['label'][start:end + 1]))
+                                ''.join(ner_data['text'][start:end + 1]))
                 elif ner_data['label'][i] == 'O':
                     start = -1
                 i += 1
@@ -186,9 +187,9 @@ class MyDataReader(object):
                 elif ner_data['label'][i] == 'E':
                     end = i
                     if start != -1:
-                        if ''.join(ner_data['label'][start:end + 1]) not in entity:
+                        if ''.join(ner_data['text'][start:end + 1]) not in entity:
                             entity.append(
-                                ''.join(ner_data['label'][start:end + 1]))
+                                ''.join(ner_data['text'][start:end + 1]))
                 elif ner_data['label'][i] == 'O':
                     start = -1
                 i += 1
@@ -228,24 +229,29 @@ class MyDataReader(object):
         def reader():
             """Generator"""
             f_ner = open(ner_path, 'r')
-            for line in open(data_path.strip()):
+            f = open(data_path.strip())
+            for line in f:
                 # 选择ner输出文件的一条数据，即text和标注label
                 ner_data = {"text": '', "label": []}
                 ner_line = f_ner.readline()
                 while ner_line.strip():
-                    item = ner_line.split(' ')
-                    if len(item) != 3:
+                    item = ner_line.strip().split(' ')
+                    if len(item) != 2:
                         print(item)
                         raise ValueError
                     ner_data['text'] += item[0]
-                    ner_data['label'].append(item[2])
+                    ner_data['label'].append(item[1])
                     ner_line = f_ner.readline()
 
                 # 对文件每一行生成数据
                 sample_list = self._get_feed_iterator(
                     line.strip(), ner_data, label_dict=self.label_eng_dict, mode=mode)
-                if sample_list is None:
-                    continue
+                # if sample_list is None:
+                #     line = f.readline()
+                #     sample_list = self._get_feed_iterator(
+                #         line.strip(), ner_data, label_dict=self.label_eng_dict, mode=mode)
+                # if sample_list is None:
+                #     continue
                 yield sample_list
 
         return reader
@@ -306,7 +312,7 @@ if __name__ == '__main__':
         label_dict_path='../dict/p_eng',
         train_data_list_path='../data/train_data.json',
         dev_data_list_path='../data/dev_data.json',
-        train_ner_file='../data/label_train.txt',
+        train_ner_file='../data/train.txt',
         dev_ner_file='../data/label_dev.txt')
 
     # prepare data reader
@@ -315,14 +321,12 @@ if __name__ == '__main__':
         for sample_list in tqdm(train()):
             for sample in sample_list:
                 f.write(sample + '\n')
-            f.write('\n')
 
     dev = data_generator.get_dev_reader()
     with open("./RC_data/dev.txt", 'w') as f:
         for sample_list in tqdm(dev()):
             for sample in sample_list:
                 f.write(sample + '\n')
-            f.write('\n')
 
     test = data_generator.get_test_reader(
         test_file_path='../data/test1_data_postag.json', test_ner_file='../data/label_test.txt')
@@ -330,4 +334,3 @@ if __name__ == '__main__':
         for sample_list in tqdm(test()):
             for sample in sample_list:
                 f.write(sample + '\n')
-            f.write('\n')

@@ -36,17 +36,17 @@ class MyDataReader(object):
                 raise ValueError("%s not found." % (input_dict))
                 return
 
-        self._feature_dict = {}
-        self._feature_dict['postag_dict'] = \
-            self._load_dict_from_file(self._dict_path_dict['postag_dict'])
-        self._feature_dict['label_dict'] = \
-            self._load_label_dict(self._dict_path_dict['label_dict'])
-        # 将之前所有的字典反向
-        self._reverse_dict = {name: self._get_reverse_dict(name) for name in
-                              self._dict_path_dict.keys()}
-        self._reverse_dict['eng_map_p_dict'] = self._reverse_p_eng(
-            self._p_map_eng_dict)
-        self._UNK_IDX = 0
+        # self._feature_dict = {}
+        # self._feature_dict['postag_dict'] = \
+        #     self._load_dict_from_file(self._dict_path_dict['postag_dict'])
+        # self._feature_dict['label_dict'] = \
+        #     self._load_label_dict(self._dict_path_dict['label_dict'])
+        # # 将之前所有的字典反向
+        # self._reverse_dict = {name: self._get_reverse_dict(name) for name in
+        #                       self._dict_path_dict.keys()}
+        # self._reverse_dict['eng_map_p_dict'] = self._reverse_p_eng(
+        #     self._p_map_eng_dict)
+        # self._UNK_IDX = 0
 
         # 统计在所有训练数据中主体和客体所覆盖的postag
         # 主体subject，客体object
@@ -112,6 +112,7 @@ class MyDataReader(object):
 
         token_list = []
         label_list = []
+        sentence = ''.join(s.strip() for s in sentence.split())
         for s in sentence:
             token_list.append(s)
         if not need_label:
@@ -139,8 +140,6 @@ class MyDataReader(object):
 
     def path_reader(self, data_path, need_input=False, need_label=True):
         """Read data from data_path"""
-        self._feature_dict['data_keylist'] = []
-
         def reader():
             """Generator"""
             if os.path.isdir(data_path):
@@ -279,15 +278,20 @@ if __name__ == '__main__':
     with open("./NER_data/train.txt", 'w') as f:
         for token_list, label_list in tqdm(train()):
             for i in range(len(token_list)):
+                if token_list[i] == '' and label_list[i] == '':
+                    raise ValueError
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
             f.write('\n')
 
     dev = data_generator.get_dev_reader()
+    index = 0
     with open("./NER_data/dev.txt", 'w') as f:
         for token_list, label_list in tqdm(dev()):
+            index += 1
             for i in range(len(token_list)):
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')
             f.write('\n')
+    print('index:{}'.format(index))
 
     test = data_generator.get_test_reader(
         test_file_path='../data/test1_data_postag.json')

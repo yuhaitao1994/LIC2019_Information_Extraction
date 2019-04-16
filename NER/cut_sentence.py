@@ -54,19 +54,21 @@ def cut_sentence(file, max_seq_length):
     context = []
     sentence = []
     cnt = 0
+    index = 0
     for line in load_file(file):
         line = line.strip()
         if line == '' and len(sentence) != 0:
             # 判断这一句是否超过最大长度
+            index += 1
             if len(sentence) > max_seq_length:
-                sentence = _cut(sentence)
-                context.extend(sentence)
-            else:
-                context.append(sentence)
+                sentence = sentence[0:max_seq_length]
+            context.append(sentence)
             sentence = []
             continue
         cnt += 1
         sentence.append(line)
+    print('index:{}'.format(index))
+    print('sentence num:{}'.format(len(context)))
     print('token cnt:{}'.format(cnt))
     return context
 
