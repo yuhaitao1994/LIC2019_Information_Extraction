@@ -37,11 +37,11 @@ def get_args_parser():
         'Model Config', 'config the model params')
     group2.add_argument('-max_seq_length', type=int, default=150,
                         help='The maximum total input sequence length after WordPiece tokenization.')
-    group2.add_argument('-do_train', type=bool, default=True,
+    group2.add_argument('-do_train', type=bool, default=False,
                         help='Whether to run training.')
-    group2.add_argument('-do_eval', type=bool, default=True,
+    group2.add_argument('-do_eval', type=bool, default=False,
                         help='Whether to run eval on the dev set.')
-    group2.add_argument('-do_predict', type=bool, default=False,
+    group2.add_argument('-do_predict', type=bool, default=True,
                         help='Whether to run the predict in inference mode on the test set.')
     group2.add_argument('-batch_size', type=int, default=32,
                         help='Total batch size for training, eval and predict.')
@@ -71,7 +71,7 @@ def get_args_parser():
     group2.add_argument('-do_lower_case', type=bool, default=True,
                         help='Whether to lower case the input text.')
     group2.add_argument('-clean', type=bool, default=True)
-    group2.add_argument('-device_map', type=str, default='0',
+    group2.add_argument('-device_map', type=str, default='1',
                         help='witch device using to train')
 
     # add labels

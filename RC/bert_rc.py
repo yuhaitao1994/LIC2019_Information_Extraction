@@ -501,8 +501,8 @@ def main(args):
     # estimator配置，需要研究一下
     run_config = tf.estimator.RunConfig(
         model_dir=args.output_dir,
-        save_summary_steps=500,
-        save_checkpoints_steps=500,
+        save_summary_steps=args.save_summary_steps,
+        save_checkpoints_steps=args.save_checkpoints_steps,
         session_config=session_config
     )
 
@@ -612,71 +612,31 @@ def main(args):
             drop_remainder=False)
 
         result = estimator.predict(input_fn=predict_input_fn)
-        output_predict_file = os.path.join(args.output_dir, "label_test.txt")
+        output_predict_file = os.path.join(
+            args.output_dir, "prediction_test.txt")
 
-        def result_to_pair(writer, examples, result):
-            for predict_line, prediction in zip(examples, result):
-                idx = 0
-                line = ''
-                line_token = str(predict_line.text).split(' ')
-                label_token = str(predict_line.label).split(' ')
-                len_seq = len(label_token)
-                if len(line_token) != len(label_token):
-                    tf.logging.info(predict_line.text)
-                    tf.logging.info(predict_line.label)
-                    break
-                for id in prediction:
-                    if idx >= len_seq:
-                        break
-                    if id == 0:
-                        continue
-                    curr_labels = id2label[id]
-                    if curr_labels in ['[CLS]', '[SEP]']:
-                        continue
-                    try:
-                        line += line_token[idx] + ' ' + \
-                            label_token[idx] + ' ' + curr_labels + '\n'
-                    except Exception as e:
-                        tf.logging.info(e)
-                        tf.logging.info(predict_line.text)
-                        tf.logging.info(predict_line.label)
-                        line = ''
-                        break
-                    idx += 1
-                writer.write(line + '\n')
+        def result_to_pair(writer, data_file, result):
+            f = open(data_file, 'r')
+            for line, prediction in zip(f, result):
+                line = line.strip()
+                writer.write(line + '\t' + str(prediction) + '\n')
 
         with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
-            result_to_pair(writer, predict_examples, result)
-        eval_result = conlleval.return_report(output_predict_file)
-        print(''.join(eval_result))
-        # 写结果到文件中
-        with codecs.open(os.path.join(args.output_dir, 'predict_score.txt'), 'a', encoding='utf-8') as fd:
-            fd.write(''.join(eval_result))
+            result_to_pair(writer, os.path.join(
+                args.data_dir, 'test.txt'), result)
 
-        # 在predict的时候同时需输出train和dev集的结果，因为需要后一步的生成负样本数据
-        train_file = os.path.join(args.output_dir, "train.tf_record")
+        # 在predict的时候同时需输出dev集的结果，因为需要后处理，再线上评估
         eval_file = os.path.join(args.output_dir, "eval.tf_record")
-        predict_input_fn_t = file_based_input_fn_builder(
-            input_file=train_file,
-            seq_length=args.max_seq_length,
-            is_training=False,
-            drop_remainder=False)
         predict_input_fn_d = file_based_input_fn_builder(
             input_file=eval_file,
             seq_length=args.max_seq_length,
             is_training=False,
             drop_remainder=False)
-        result_t = estimator.predict(input_fn=predict_input_fn_t)
-        output_t_file = os.path.join(args.output_dir, "label_train.txt")
         result_d = estimator.predict(input_fn=predict_input_fn_d)
-        output_d_file = os.path.join(args.output_dir, "label_dev.txt")
-        with codecs.open(output_t_file, 'w', encoding='utf-8') as writer:
-            result_to_pair(writer, train_examples, result_t)
+        output_d_file = os.path.join(args.output_dir, "prediction_dev.txt")
         with codecs.open(output_d_file, 'w', encoding='utf-8') as writer:
-            result_to_pair(writer, eval_examples, result_d)
-        eval_result_t = conlleval.return_report(output_t_file)
-        print(''.join(eval_result_t))
-        eval_result_d = conlleval.return_report(output_d_file)
+            result_to_pair(writer, os.path.join(
+                args.data_dir, 'dev.txt'), result)
         print(''.join(eval_result_d))
 
     # filter model
