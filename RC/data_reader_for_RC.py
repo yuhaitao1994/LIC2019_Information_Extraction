@@ -307,27 +307,27 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/train_data.json',
-        dev_data_list_path='../data/dev_data.json',
-        train_ner_file='../data/label_train.txt',
-        dev_ner_file='../data/label_dev.txt')
+        train_data_list_path='../data/ori_data/train_data.json',
+        dev_data_list_path='../data/ori_data/dev_data.json',
+        train_ner_file='../data/ori_data/label_train.txt',
+        dev_ner_file='../data/ori_data/label_dev.txt')
 
     # prepare data reader
-    # train = data_generator.get_train_reader()
-    # with open("./RC_data/train.txt", 'w') as f:
-    #     for sample_list in tqdm(train()):
-    #         for sample in sample_list:
-    #             f.write(sample + '\n')
+    train = data_generator.get_train_reader()
+    with open("../data/RC_data/train.txt", 'w') as f:
+        for sample_list in tqdm(train()):
+            for sample in sample_list:
+                f.write(sample + '\n')
 
     dev = data_generator.get_dev_reader()
-    with open("./RC_data/dev.txt", 'w') as f:
+    with open("../data/RC_data/dev.txt", 'w') as f:
         for sample_list in tqdm(dev()):
             for sample in sample_list:
                 f.write(sample + '\n')
 
-    # test = data_generator.get_test_reader(
-    #     test_file_path='../data/test1_data_postag.json', test_ner_file='../data/label_test.txt')
-    # with open("./RC_data/test.txt", 'w') as f:
-    #     for sample_list in tqdm(test()):
-    #         for sample in sample_list:
-    #             f.write(sample + '\n')
+    test = data_generator.get_test_reader(
+        test_file_path='../data/ori_data/test1_data_postag.json', test_ner_file='../data/ori_data/label_test.txt')
+    with open("../data/RC_data/test.txt", 'w') as f:
+        for sample_list in tqdm(test()):
+            for sample in sample_list:
+                f.write(sample + '\n')

@@ -291,9 +291,9 @@ if __name__ == '__main__':
     # reload(sys)
     # sys.setdefaultencoding('utf-8')
     parser = argparse.ArgumentParser()
-    parser.add_argument("--golden_dir", type=str, default='../data/')
-    parser.add_argument("--predict_dir", type=str, default='./RC_model/')
-    parser.add_argument("--result_dir", type=str, default='./RC_result/')
+    parser.add_argument("--golden_dir", type=str, default='../data/ori_data/')
+    parser.add_argument("--predict_dir", type=str, default='../data/RC_model/')
+    parser.add_argument("--result_dir", type=str, default='../data/RC_result/')
     parser.add_argument("--eng_label_dic_file",
                         type=str, default='../dict/p_eng')
     parser.add_argument("--type_dic_file", type=str,

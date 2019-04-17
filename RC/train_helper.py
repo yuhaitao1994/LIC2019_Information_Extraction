@@ -18,7 +18,7 @@ def get_args_parser():
     parser = argparse.ArgumentParser()
 
     bert_path = '../bert/bert_model'
-    root_path = './'
+    root_path = '../data/'
 
     group1 = parser.add_argument_group('File Paths',
                                        'config the path, checkpoint and filename of a pretrained/fine-tuned BERT model')

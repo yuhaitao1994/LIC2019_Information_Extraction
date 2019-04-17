@@ -270,12 +270,12 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/train_data.json',
-        dev_data_list_path='../data/dev_data.json')
+        train_data_list_path='../data/ori_data/train_data.json',
+        dev_data_list_path='../data/ori_data/dev_data.json')
 
     # prepare data reader
     train = data_generator.get_train_reader()
-    with open("./NER_data/train.txt", 'w') as f:
+    with open("../data/NER_data/train.txt", 'w') as f:
         for token_list, label_list in tqdm(train()):
             for i in range(len(token_list)):
                 if token_list[i] == '' and label_list[i] == '':
@@ -285,7 +285,7 @@ if __name__ == '__main__':
 
     dev = data_generator.get_dev_reader()
     index = 0
-    with open("./NER_data/dev.txt", 'w') as f:
+    with open("../data/NER_data/dev.txt", 'w') as f:
         for token_list, label_list in tqdm(dev()):
             index += 1
             for i in range(len(token_list)):
@@ -294,8 +294,8 @@ if __name__ == '__main__':
     print('index:{}'.format(index))
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/test1_data_postag.json')
-    with open("./NER_data/test.txt", 'w') as f:
+        test_file_path='../data/ori_data/test1_data_postag.json')
+    with open("../data/NER_data/test.txt", 'w') as f:
         for token_list, label_list in tqdm(test()):
             for i in range(len(token_list)):
                 f.write(str(token_list[i]) + ' ' + str(label_list[i]) + '\n')

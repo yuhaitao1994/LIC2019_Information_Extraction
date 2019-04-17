@@ -18,15 +18,15 @@ def get_args_parser():
     parser = argparse.ArgumentParser()
 
     bert_path = '../bert/bert_model'
-    root_path = './'
+    root_path = '../'
 
     group1 = parser.add_argument_group('File Paths',
                                        'config the path, checkpoint and filename of a pretrained/fine-tuned BERT model')
-    group1.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'NER_data'),
+    group1.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'data/NER_data'),
                         help='train, dev and test data dir')
     group1.add_argument('-bert_config_file', type=str,
                         default=os.path.join(bert_path, 'bert_config.json'))
-    group1.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'NER_model'),
+    group1.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'data/NER_model'),
                         help='directory of a pretrained BERT model')
     group1.add_argument('-init_checkpoint', type=str, default=os.path.join(bert_path, 'bert_model.ckpt'),
                         help='Initial checkpoint (usually from a pre-trained BERT model).')
@@ -45,7 +45,7 @@ def get_args_parser():
                         help='Whether to run the predict in inference mode on the test set.')
     group2.add_argument('-batch_size', type=int, default=32,
                         help='Total batch size for training, eval and predict.')
-    group2.add_argument('-learning_rate', type=float, default=1e-5,
+    group2.add_argument('-learning_rate', type=float, default=2e-5,
                         help='The initial learning rate for Adam.')
     group2.add_argument('-num_train_epochs', type=float, default=15,
                         help='Total number of training epochs to perform.')
