@@ -619,7 +619,8 @@ def main(args):
             f = open(data_file, 'r')
             for line, prediction in zip(f, result):
                 line = line.strip()
-                writer.write(line + '\t' + str(prediction) + '\n')
+                label = label_list[np.argmax(prediction['probabilities'])]
+                writer.write(line + '\t' + str(label) + '\n')
 
         with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
             result_to_pair(writer, os.path.join(
@@ -636,8 +637,7 @@ def main(args):
         output_d_file = os.path.join(args.output_dir, "prediction_dev.txt")
         with codecs.open(output_d_file, 'w', encoding='utf-8') as writer:
             result_to_pair(writer, os.path.join(
-                args.data_dir, 'dev.txt'), result)
-        print(''.join(eval_result_d))
+                args.data_dir, 'dev.txt'), result_d)
 
     # filter model
     if args.filter_adam_var:
