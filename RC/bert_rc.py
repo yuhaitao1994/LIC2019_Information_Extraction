@@ -293,7 +293,7 @@ def file_based_input_fn_builder(input_file, seq_length, is_training, drop_remain
         d = tf.data.TFRecordDataset(input_file)
         if is_training:
             d = d.repeat()
-            d = d.shuffle(buffer_size=300)
+            d = d.shuffle(buffer_size=10000)
         d = d.apply(tf.data.experimental.map_and_batch(lambda record: _decode_record(record, name_to_features),
                                                        batch_size=batch_size,
                                                        num_parallel_calls=8,  # 并行处理数据的CPU核心数量，不要大于你机器的核心数
