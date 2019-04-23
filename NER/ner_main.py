@@ -138,7 +138,6 @@ class NerProcessor(DataProcessor):
                         for l, w in zip(labels, words):
                             if len(l) > 0 and len(w) > 0:
                                 label.append(l)
-                                self.labels.add(l)
                                 word.append(w)
                         lines.append([' '.join(label), ' '.join(word)])
                         words = []
@@ -249,8 +248,6 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         label_ids=label_ids,
         # label_mask = label_mask
     )
-    # mode='test'的时候才有效
-    write_tokens(ntokens, output_dir, mode)
     return feature
 
 
@@ -269,7 +266,7 @@ def filed_based_convert_examples_to_features(
     writer = tf.python_io.TFRecordWriter(output_file)
     # 遍历训练数据
     for (ex_index, example) in enumerate(examples):
-        if ex_index % 5000 == 0:
+        if ex_index % 10000 == 0:
             tf.logging.info("Writing example %d of %d" %
                             (ex_index, len(examples)))
         # 对于每一个训练样本,
@@ -315,7 +312,6 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
             example[name] = t
         return example
 
-    batch_size = params["batch_size"]
     d = tf.data.TFRecordDataset(input_file)
     if is_training:
         d = d.repeat()
@@ -473,9 +469,9 @@ if __name__ == '__main__':
     """
     开始执行
     """
+    args = get_args_parser()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
     tf.logging.set_verbosity(tf.logging.INFO)
-    args = get_args_parser()
     if True:
         param_str = '\n'.join(['%20s = %s' % (k, v)
                                for k, v in sorted(vars(args).items())])

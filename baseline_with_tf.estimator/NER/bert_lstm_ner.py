@@ -154,7 +154,6 @@ class NerProcessor(DataProcessor):
                         for l, w in zip(labels, words):
                             if len(l) > 0 and len(w) > 0:
                                 label.append(l)
-                                self.labels.add(l)
                                 word.append(w)
                         lines.append([' '.join(label), ' '.join(word)])
                         words = []

@@ -14,7 +14,6 @@ __all__ = ['get_args_parser']
 
 
 def get_args_parser():
-    from bert_lstm_ner import __version__
     parser = argparse.ArgumentParser()
 
     bert_path = '../bert/bert_model'
@@ -82,6 +81,4 @@ def get_args_parser():
                         help='turn on tensorflow logging for debug')
     parser.add_argument('-ner', type=str, default='ner',
                         help='which modle to train')
-    parser.add_argument('-version', action='version',
-                        version='%(prog)s ' + __version__)
     return parser.parse_args()

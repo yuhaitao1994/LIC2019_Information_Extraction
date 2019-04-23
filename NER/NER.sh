@@ -1,6 +1,6 @@
-set -e
+# -*- coding:utf-8 -*-
 
-python3 bert_lstm_ner.py \
+python3 ner_main.py \
     -device_map=0 \
     -do_train=True \
     -do_eval=True \
@@ -8,4 +8,4 @@ python3 bert_lstm_ner.py \
     -max_seq_length=128 \
     -batch_size=32 \
     -learning_rate=2e-5 \
-    -num_train_epochs=15
+    -num_train_epochs=2
