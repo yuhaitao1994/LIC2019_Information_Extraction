@@ -270,8 +270,8 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/ori_data/train_data.json',
-        dev_data_list_path='../data/ori_data/dev_data.json')
+        train_data_list_path='../data/ori_data/train_demo.json',
+        dev_data_list_path='../data/ori_data/dev_demo.json')
 
     # prepare data reader
     train = data_generator.get_train_reader()
@@ -294,7 +294,7 @@ if __name__ == '__main__':
     print('index:{}'.format(index))
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/ori_data/test1_data_postag.json')
+        test_file_path='../data/ori_data/test_demo.json')
     with open("../data/NER_data/test.txt", 'w') as f:
         for token_list, label_list in tqdm(test()):
             for i in range(len(token_list)):

@@ -376,26 +376,32 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                                     seq_length=args.max_seq_length, is_training=True, drop_remainder=False)
     eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
-    train_iter = train_data.make_one_shot_iterator()
-    eval_iter = eval_data.make_one_shot_iterator()
+    train_iter = train_data.make_one_shot_iterator().get_next()
+    eval_iter = eval_data.make_one_shot_iterator().get_next()
+
     # 开启计算图
     with tf.Session(config=sess_config) as sess:
         # 构造模型
         input_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int64)
+            shape=[None, args.max_seq_length], dtype=tf.int32)
         input_mask = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int64)
+            shape=[None, args.max_seq_length], dtype=tf.int32)
         segment_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int64)
+            shape=[None, args.max_seq_length], dtype=tf.int32)
         label_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int64)
+            shape=[None, args.max_seq_length], dtype=tf.int32)
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
         total_loss, logits, trans, pred_ids = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-            num_labels, False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
+            len(label_list) + 1, False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
         sess.run(tf.assign(is_training, tf.constant(True, dtype=tf.bool)))
+        # 优化器
+        train_op = optimization.create_optimizer(
+            total_loss, args.learning_rate, num_train_steps, num_warmup_steps, False)
+        sess.run(tf.global_variables_initializer())
+
         # 加载bert原始模型
         tvars = tf.trainable_variables()
         if args.init_checkpoint:
@@ -403,9 +409,14 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 modeling.get_assignment_map_from_checkpoint(
                     tvars, args.init_checkpoint)
             tf.train.init_from_checkpoint(args.init_checkpoint, assignment_map)
-        # 优化器
-        train_op = optimization.create_optimizer(
-            total_loss, args.learning_rate, num_train_steps, num_warmup_steps, False)
+
+        # 打印加载模型的参数
+        for var in tvars:
+            init_string = ""
+            if var.name in initialized_variable_names:
+                init_string = ", *INIT_FROM_CKPT*"
+            tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+                            init_string)
 
         # 初始化存储和log
         writer = tf.summary.FileWriter(log_dir, sess.graph)
@@ -417,9 +428,10 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         # 开始训练
         for go in range(1, num_train_steps + 1):
             # feed
+            aa = sess.run(train_iter)
             train_feed = {}
             train_feed[input_ids], train_feed[input_mask], train_feed[segment_ids], train_feed[label_ids] = \
-                train_iter.get_next()
+                aa['input_ids'], aa['input_mask'], aa['segment_ids'], aa['label_ids']
             loss, preds, op = sess.run(
                 [total_loss, pred_ids, train_op], feed_dict=train_feed)
 
