@@ -293,10 +293,47 @@ def filed_based_convert_examples_to_features(
         writer.write(tf_example.SerializeToString())
 
 
-def get_tfrecord(args, processor):
+def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_remainder):
     """
-    生成tf_record文件
+    仿照bert的file_based_input_fn_builder修改
     """
+    name_to_features = {
+        "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
+        "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
+        "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
+        "label_ids": tf.FixedLenFeature([seq_length], tf.int64),
+        # "label_ids":tf.VarLenFeature(tf.int64),
+        # "label_mask": tf.FixedLenFeature([seq_length], tf.int64),
+    }
+
+    def _decode_record(record, name_to_features):
+        example = tf.parse_single_example(record, name_to_features)
+        for name in list(example.keys()):
+            t = example[name]
+            if t.dtype == tf.int64:
+                t = tf.to_int32(t)
+            example[name] = t
+        return example
+
+    batch_size = params["batch_size"]
+    d = tf.data.TFRecordDataset(input_file)
+    if is_training:
+        d = d.repeat()
+        d = d.shuffle(buffer_size=10000)
+    d = d.apply(tf.data.experimental.map_and_batch(lambda record: _decode_record(record, name_to_features),
+                                                   batch_size=batch_size,
+                                                   num_parallel_calls=8,  # 并行处理数据的CPU核心数量，不要大于你机器的核心数
+                                                   drop_remainder=drop_remainder))
+    d = d.prefetch(buffer_size=4)
+    return d
+
+
+def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
+    """
+    训练和评估函数
+    """
+
+    # 生成tf_record文件
     train_examples = processor.get_train_examples(args.data_dir)
     eval_examples = processor.get_dev_examples(args.data_dir)
     num_train_steps = int(
@@ -323,11 +360,107 @@ def get_tfrecord(args, processor):
         filed_based_convert_examples_to_features(
             eval_examples, label_list, args.max_seq_length, tokenizer, eval_file, args.output_dir)
 
+    """
+    -------------分割线-------------
+    """
+    # 存储路径
+    log_dir = os.path.join(args.output_dir, 'log')
+    save_dir = os.path.join(args.output_dir, 'model')
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    # # 加载数据
+    # train_file = os.path.join(args.output_dir, "train.tf_record")
+    # eval_file = os.path.join(args.output_dir, "eval.tf_record")
+    # if not os.path.exists(train_file) or not os.path.exists(eval_file):
+    #     raise ValueError
+    # 生成dataset
+    train_data = file_based_dataset(input_file=train_file, batch_size=args.batch_size,
+                                    seq_length=args.max_seq_length, is_training=True, drop_remainder=False)
+    eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
+                                   seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    train_iter = train_data.make_one_shot_iterator()
+    eval_iter = eval_data.make_one_shot_iterator()
+    # 开启计算图
+    with tf.Session(config=sess_config) as sess:
+        # 构造模型
+        input_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int64)
+        input_mask = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int64)
+        segment_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int64)
+        label_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int64)
+        is_training = tf.get_variable(
+            "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-def train_and_eval(args):
-    """
-    训练和评估函数
-    """
+        total_loss, logits, trans, pred_ids = create_model(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
+            num_labels, False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
+        sess.run(tf.assign(is_training, tf.constant(True, dtype=tf.bool)))
+        # 加载bert原始模型
+        tvars = tf.trainable_variables()
+        if args.init_checkpoint:
+            (assignment_map, initialized_variable_names) = \
+                modeling.get_assignment_map_from_checkpoint(
+                    tvars, args.init_checkpoint)
+            tf.train.init_from_checkpoint(args.init_checkpoint, assignment_map)
+        # 优化器
+        train_op = optimization.create_optimizer(
+            total_loss, args.learning_rate, num_train_steps, num_warmup_steps, False)
+
+        # 初始化存储和log
+        writer = tf.summary.FileWriter(log_dir, sess.graph)
+        saver = tf.train.Saver()
+
+        # 定义一些全局变量
+        best_eval_ = 1000.0
+
+        # 开始训练
+        for go in range(1, num_train_steps + 1):
+            # feed
+            train_feed = {}
+            train_feed[input_ids], train_feed[input_mask], train_feed[segment_ids], train_feed[label_ids] = \
+                train_iter.get_next()
+            loss, preds, op = sess.run(
+                [total_loss, pred_ids, train_op], feed_dict=train_feed)
+
+            if go % args.save_summary_steps == 0:
+                # 训练log
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="train/loss", simple_value=loss), ]), tf.train.get_global_step())
+                writer.flush()
+
+            if go % args.save_checkpoints_steps == 0:
+                # 验证集评估
+                sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
+                eval_loss_total = 0.0
+                eval_preds_total = []
+                eval_truth_total = []
+                for _ in tqdm(range(0, int(len(eval_examples) / args.batch_size) + 1)):
+                    eval_feed = {}
+                    eval_feed[input_ids], eval_feed[input_mask], eval_feed[segment_ids], eval_feed[label_ids] = \
+                        eval_iter.get_next()
+                    eval_loss, eval_preds, eval_truth = sess.run(
+                        [total_loss, pred_ids, label_ids], feed_dict=eval_feed)
+                    eval_loss_total += eval_loss
+                eval_loss_aver = eval_loss_total / len(eval_examples)
+                # 评估log
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/loss", simple_value=eval_loss_aver), ]), tf.train.get_global_step())
+                writer.flush()
+
+                # early stopping
+
+                # 模型保存
+                if eval_loss_aver < best_eval_:
+                    best_eval_ = eval_loss_aver
+                    saver.save(sess, os.path.join(save_dir, "model_{}_eval_{:.6f}.ckpt".format(
+                        tf.train.get_global_step(), best_eval_)))
+
+                sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
 
 def predict(args):
@@ -396,10 +529,8 @@ if __name__ == '__main__':
         intra_op_parallelism_threads=0,
         allow_soft_placement=True)
 
-    if args.do_record:
-        # 生成train和eval的tfrecord
-        get_tfrecord(args=args, processor=processor)
     if args.do_train and args.do_eval:
-        train_and_eval(args=args)
+        train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
+                       bert_config=bert_config, sess_config=session_config, label_list=label_list)
     if args.do_predict:
         predict(args=args)
