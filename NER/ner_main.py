@@ -567,9 +567,9 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             tf.train.latest_checkpoint(save_dir) + ".meta")
         saver.restore(sess, tf.train.latest_checkpoint(save_dir))
         # 打印张量名
-        tensor_list = [
-            n.name for n in tf.get_default_graph().as_graph_def().node if 'is_training' in n.name]
-        print(tensor_list)
+        # tensor_list = [
+        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'ReverseSequence' in n.name]
+        # print(tensor_list)
         # 通过张量名获取模型的占位符和参数
         input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
         input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
@@ -577,6 +577,9 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
         sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
             'is_training:0'), tf.constant(False, dtype=tf.bool)))
+        # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
+        pred_ids = tf.get_default_graph().get_tensor_by_name('ReverseSequence_1:0')
+
 
 
 if __name__ == '__main__':
