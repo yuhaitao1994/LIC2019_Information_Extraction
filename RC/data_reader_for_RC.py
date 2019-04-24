@@ -307,8 +307,8 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/ori_data/train_data.json',
-        dev_data_list_path='../data/ori_data/dev_data.json',
+        train_data_list_path='../data/ori_data/train_demo.json',
+        dev_data_list_path='../data/ori_data/dev_demo.json',
         train_ner_file='../data/ori_data/label_train.txt',
         dev_ner_file='../data/ori_data/label_dev.txt')
 
@@ -326,7 +326,7 @@ if __name__ == '__main__':
                 f.write(sample + '\n')
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/ori_data/test1_data_postag.json', test_ner_file='../data/ori_data/label_test.txt')
+        test_file_path='../data/ori_data/test_demo.json', test_ner_file='../data/ori_data/label_test.txt')
     with open("../data/RC_data/test.txt", 'w') as f:
         for sample_list in tqdm(test()):
             for sample in sample_list:

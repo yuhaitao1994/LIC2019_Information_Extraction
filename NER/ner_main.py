@@ -9,6 +9,7 @@ import tensorflow as tf
 import codecs
 import pickle
 import sys
+from sklearn import metrics
 
 import tf_metrics
 import conlleval
@@ -324,6 +325,44 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
     return d
 
 
+def get_last_checkpoint(model_path):
+    if not os.path.exists(os.path.join(model_path, 'checkpoint')):
+        tf.logging.info('checkpoint file not exits:'.format(
+            os.path.join(model_path, 'checkpoint')))
+        return None
+    last = None
+    with codecs.open(os.path.join(model_path, 'checkpoint'), 'r', encoding='utf-8') as fd:
+        for line in fd:
+            line = line.strip().split(':')
+            if len(line) != 2:
+                continue
+            if line[0] == 'model_checkpoint_path':
+                last = line[1][2:-1]
+                break
+    return last
+
+
+def adam_filter(model_path):
+    """
+    去掉模型中的Adam相关参数，这些参数在测试的时候是没有用的
+    :param model_path: 
+    :return: 
+    """
+    last_name = get_last_checkpoint(model_path)
+    if last_name is None:
+        return
+    sess = tf.Session()
+    imported_meta = tf.train.import_meta_graph(
+        os.path.join(model_path, last_name + '.meta'))
+    imported_meta.restore(sess, os.path.join(model_path, last_name))
+    need_vars = []
+    for var in tf.global_variables():
+        if 'adam_v' not in var.name and 'adam_m' not in var.name:
+            need_vars.append(var)
+    saver = tf.train.Saver(need_vars)
+    saver.save(sess, os.path.join(model_path, 'model.ckpt'))
+
+
 def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
     """
     训练和评估函数
@@ -377,7 +416,6 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     train_iter = train_data.make_one_shot_iterator().get_next()
-    eval_iter = eval_data.make_one_shot_iterator().get_next()
 
     # 开启计算图
     with tf.Session(config=sess_config) as sess:
@@ -396,7 +434,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         total_loss, logits, trans, pred_ids = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
             len(label_list) + 1, False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
-        sess.run(tf.assign(is_training, tf.constant(True, dtype=tf.bool)))
+
         # 优化器
         train_op = optimization.create_optimizer(
             total_loss, args.learning_rate, num_train_steps, num_warmup_steps, False)
@@ -423,50 +461,75 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         saver = tf.train.Saver()
 
         # 定义一些全局变量
-        best_eval_ = 1000.0
+        best_eval_recall = 0.0
+        patience = 0
 
         # 开始训练
+        sess.run(tf.assign(is_training, tf.constant(True, dtype=tf.bool)))
         for go in range(1, num_train_steps + 1):
             # feed
-            aa = sess.run(train_iter)
-            train_feed = {}
-            train_feed[input_ids], train_feed[input_mask], train_feed[segment_ids], train_feed[label_ids] = \
-                aa['input_ids'], aa['input_mask'], aa['segment_ids'], aa['label_ids']
-            loss, preds, op = sess.run(
-                [total_loss, pred_ids, train_op], feed_dict=train_feed)
+            train_batch = sess.run(train_iter)
+            loss, preds, op = sess.run([total_loss, pred_ids, train_op], feed_dict={
+                                       input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
+                                       segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
 
             if go % args.save_summary_steps == 0:
                 # 训练log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="train/loss", simple_value=loss), ]), tf.train.get_global_step())
+                    tag="loss/train_loss", simple_value=loss / args.batch_size), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
             if go % args.save_checkpoints_steps == 0:
                 # 验证集评估
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
                 eval_loss_total = 0.0
-                eval_preds_total = []
-                eval_truth_total = []
-                for _ in tqdm(range(0, int(len(eval_examples) / args.batch_size) + 1)):
-                    eval_feed = {}
-                    eval_feed[input_ids], eval_feed[input_mask], eval_feed[segment_ids], eval_feed[label_ids] = \
-                        eval_iter.get_next()
-                    eval_loss, eval_preds, eval_truth = sess.run(
-                        [total_loss, pred_ids, label_ids], feed_dict=eval_feed)
+                eval_preds_total = np.array([[0] * 128], dtype=np.int32)
+                eval_truth_total = np.array([[0] * 128], dtype=np.int32)
+                # 重新生成一次验证集数据
+                eval_data = eval_data.repeat()
+                eval_iter = eval_data.make_one_shot_iterator().get_next()
+                for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+                    # eval feed
+                    eval_batch = sess.run(eval_iter)
+                    eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
+                        input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
+                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+                    # 统计结果
                     eval_loss_total += eval_loss
-                eval_loss_aver = eval_loss_total / len(eval_examples)
+                    eval_preds_total = np.concatenate(
+                        (eval_preds_total, eval_preds), axis=0)
+                    eval_truth_total = np.concatenate(
+                        (eval_truth_total, eval_truth), axis=0)
+
+                # 处理评估结果，计算recall与f1
+                eval_preds_total = eval_preds_total[1:]
+                eval_truth_total = eval_truth_total[1:]
+                eval_recall = metrics.recall_score(
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
+                eval_f1 = metrics.f1_score(
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
+
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="eval/loss", simple_value=eval_loss_aver), ]), tf.train.get_global_step())
+                    tag="loss/eval_loss", simple_value=eval_loss_total / len(eval_examples)), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/f1", simple_value=eval_f1), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
-                # early stopping
+                # early stopping 与 模型保存
+                if eval_recall <= best_eval_recall:
+                    patience += 1
+                    if patience >= 3:
+                        print("early stoping!")
+                        return
 
-                # 模型保存
-                if eval_loss_aver < best_eval_:
-                    best_eval_ = eval_loss_aver
-                    saver.save(sess, os.path.join(save_dir, "model_{}_eval_{:.6f}.ckpt".format(
-                        tf.train.get_global_step(), best_eval_)))
+                if eval_recall > best_eval_recall:
+                    patience = 0
+                    best_eval_recall = eval_recall
+                    saver.save(sess, os.path.join(save_dir, "model_{}_recall_{:.4f}.ckpt".format(
+                        sess.run(tf.train.get_global_step()), best_eval_recall)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
@@ -540,5 +603,8 @@ if __name__ == '__main__':
     if args.do_train and args.do_eval:
         train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
                        bert_config=bert_config, sess_config=session_config, label_list=label_list)
+        # if args.filter_adam_var:
+        #     adam_filter(os.path.join(args.output_dir, 'model'))
+
     if args.do_predict:
         predict(args=args)
