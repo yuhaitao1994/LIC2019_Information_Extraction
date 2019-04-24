@@ -421,13 +421,13 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     with tf.Session(config=sess_config) as sess:
         # 构造模型
         input_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_ids')
         input_mask = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_mask')
         segment_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='label_ids')
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
