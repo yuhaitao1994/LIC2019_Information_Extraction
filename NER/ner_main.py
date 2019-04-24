@@ -534,10 +534,49 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
 
-def predict(args):
+def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     """
     预测函数
     """
+    # 生成3个examples
+    predict_examples = processor.get_test_examples(args.data_dir)
+    predict_file = os.path.join(args.output_dir, "predict.tf_record")
+    filed_based_convert_examples_to_features(
+        predict_examples, label_list, args.max_seq_length,
+        tokenizer, predict_file, args.output_dir, mode="test")
+    train_examples = processor.get_train_examples(args.data_dir)
+    eval_examples = processor.get_dev_examples(args.data_dir)
+    train_file = os.path.join(args.output_dir, "train.tf_record")
+    eval_file = os.path.join(args.output_dir, "eval.tf_record")
+    # 生成数据集
+    train_data = file_based_dataset(input_file=train_file, batch_size=args.batch_size,
+                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
+                                   seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    predict_data = file_based_dataset(input_file=predict_file, batch_size=args.batch_size,
+                                      seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    train_iter = train_data.make_one_shot_iterator().get_next()
+    eval_iter = eval_data.make_one_shot_iterator().get_next()
+    predict_iter = predict_data.make_one_shot_iterator().get_next()
+
+    # 开启计算图
+    with tf.Session(config=sess_config) as sess:
+        # 从文件中读取计算图
+        save_dir = os.path.join(args.output_dir, 'model')
+        saver = tf.train.import_meta_graph(
+            tf.train.latest_checkpoint(save_dir) + ".meta")
+        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
+        # 打印张量名
+        tensor_list = [
+            n.name for n in tf.get_default_graph().as_graph_def().node if 'is_training' in n.name]
+        print(tensor_list)
+        # 通过张量名获取模型的占位符和参数
+        input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
+        input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
+        segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
+        label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
+        sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
+            'is_training:0'), tf.constant(False, dtype=tf.bool)))
 
 
 if __name__ == '__main__':
@@ -607,4 +646,5 @@ if __name__ == '__main__':
         #     adam_filter(os.path.join(args.output_dir, 'model'))
 
     if args.do_predict:
-        predict(args=args)
+        predict(args=args, processor=processor, tokenizer=tokenizer,
+                bert_config=bert_config, sess_config=session_config, label_list=label_list)
