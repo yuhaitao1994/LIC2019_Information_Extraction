@@ -363,6 +363,41 @@ def adam_filter(model_path):
     saver.save(sess, os.path.join(model_path, 'model.ckpt'))
 
 
+def result_to_pair(args, writer, examples, result):
+    with codecs.open(os.path.join(args.output_dir, 'label2id.pkl'), 'rb') as rf:
+        label2id = pickle.load(rf)
+        id2label = {value: key for key, value in label2id.items()}
+    for predict_line, prediction in zip(examples, result):
+        idx = 0
+        line = ''
+        line_token = str(predict_line.text).split(' ')
+        label_token = str(predict_line.label).split(' ')
+        len_seq = len(label_token)
+        if len(line_token) != len(label_token):
+            tf.logging.info(predict_line.text)
+            tf.logging.info(predict_line.label)
+            break
+        for id in prediction:
+            if idx >= len_seq:
+                break
+            if id == 0:
+                continue
+            curr_labels = id2label[id]
+            if curr_labels in ['[CLS]', '[SEP]']:
+                continue
+            try:
+                line += line_token[idx] + ' ' + \
+                    label_token[idx] + ' ' + curr_labels + '\n'
+            except Exception as e:
+                tf.logging.info(e)
+                tf.logging.info(predict_line.text)
+                tf.logging.info(predict_line.label)
+                line = ''
+                break
+            idx += 1
+        writer.write(line + '\n')
+
+
 def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
     """
     训练和评估函数
@@ -521,7 +556,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_recall <= best_eval_recall:
                     patience += 1
-                    if patience >= 3:
+                    if patience >= 5:
                         print("early stoping!")
                         return
 
@@ -565,11 +600,11 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         save_dir = os.path.join(args.output_dir, 'model')
         saver = tf.train.import_meta_graph(
             tf.train.latest_checkpoint(save_dir) + ".meta")
-        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
         # 打印张量名
         # tensor_list = [
-        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'ReverseSequence' in n.name]
+        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'older' in n.name]
         # print(tensor_list)
+        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
         # 通过张量名获取模型的占位符和参数
         input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
         input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
@@ -580,6 +615,57 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
         pred_ids = tf.get_default_graph().get_tensor_by_name('ReverseSequence_1:0')
 
+        # test集预测
+        predict_total = np.array([[0] * 128], dtype=np.int32)
+        for _ in range(0, int(len(predict_examples) / args.batch_size) + 1):
+            # predict feed
+            predict_batch = sess.run(predict_iter)
+            predict_res = sess.run(pred_ids, feed_dict={
+                input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
+                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids']})
+            predict_total = np.concatenate(
+                (predict_total, predict_res), axis=0)
+        # 处理评估结果，计算recall与f1
+        predict_total = predict_total[1:]
+        output_predict_file = os.path.join(args.output_dir, "label_test.txt")
+        with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(args, writer, predict_examples, predict_total)
+
+        # train集预测
+        train_total = np.array([[0] * 128], dtype=np.int32)
+        for _ in range(0, int(len(train_examples) / args.batch_size) + 1):
+            # predict feed
+            train_batch = sess.run(train_iter)
+            train_res = sess.run(pred_ids, feed_dict={
+                input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
+            train_total = np.concatenate(
+                (train_total, train_res), axis=0)
+        # 处理评估结果，计算recall与f1
+        train_total = train_total[1:]
+        output_train_file = os.path.join(args.output_dir, "label_train.txt")
+        with codecs.open(output_train_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(args, writer, train_examples, train_total)
+        train_score = conlleval.return_report(output_train_file)
+        print(''.join(train_score))
+
+        # eval集预测
+        eval_total = np.array([[0] * 128], dtype=np.int32)
+        for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+            # predict feed
+            eval_batch = sess.run(eval_iter)
+            eval_res = sess.run(pred_ids, feed_dict={
+                input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
+                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+            eval_total = np.concatenate(
+                (eval_total, eval_res), axis=0)
+        # 处理评估结果，计算recall与f1
+        eval_total = eval_total[1:]
+        output_eval_file = os.path.join(args.output_dir, "label_dev.txt")
+        with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(args, writer, eval_examples, eval_total)
+        eval_score = conlleval.return_report(output_eval_file)
+        print(''.join(eval_score))
 
 
 if __name__ == '__main__':
@@ -645,8 +731,8 @@ if __name__ == '__main__':
     if args.do_train and args.do_eval:
         train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
                        bert_config=bert_config, sess_config=session_config, label_list=label_list)
-        # if args.filter_adam_var:
-        #     adam_filter(os.path.join(args.output_dir, 'model'))
+        if args.filter_adam_var:
+            adam_filter(os.path.join(args.output_dir, 'model'))
 
     if args.do_predict:
         predict(args=args, processor=processor, tokenizer=tokenizer,
