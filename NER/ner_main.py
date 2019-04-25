@@ -106,7 +106,7 @@ class NerProcessor(DataProcessor):
                     pickle.dump(self.labels, rf)
             else:
                 # 注意，这里更新了label，只有O,B,I,E四种label
-                self.labels = ["O", 'B', 'I', "E", "X", "[CLS]", "[SEP]"]
+                self.labels = ["X", "O", 'B', 'I', "E", "[CLS]", "[SEP]"]
         return self.labels
 
     def _create_example(self, lines, set_type):
@@ -162,8 +162,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     :return:
     """
     label_map = {}
-    # 1表示从1开始对label进行index化
-    for (i, label) in enumerate(label_list, 1):
+    # 1表示从1开始对label进行index化,为什么？？？
+    for (i, label) in enumerate(label_list):
         label_map[label] = i
     # 保存label->index 的map
     if not os.path.exists(os.path.join(output_dir, 'label2id.pkl')):
@@ -468,7 +468,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
 
         total_loss, logits, trans, pred_ids = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-            len(label_list) + 1, False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
+            len(label_list), False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
 
         # 优化器
         train_op = optimization.create_optimizer(
