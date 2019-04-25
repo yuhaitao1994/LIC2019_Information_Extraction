@@ -110,6 +110,8 @@ class MyDataReader(object):
         dic = json.loads(line)
         sentence = dic['text']
 
+        pos_list = ['nz', 'ns', 'nw', 'nr', 'nt']
+
         token_list = []
         label_list = []
         sentence = ''.join(s.strip() for s in sentence.split())
@@ -127,15 +129,53 @@ class MyDataReader(object):
             for entity in entity_set:
                 try:
                     index = sentence.index(entity)
-                    for i in range(len(entity)):
-                        if i == 0:
-                            label_list[index + i] = 'B'
-                        elif i == len(entity) - 1:
-                            label_list[index + i] = 'E'
-                        else:
-                            label_list[index + i] = 'I'
+                    flag = 0
+                    for i in range(index, index + len(entity)):
+                        if label_list[i] == 'O':
+                            flag = 1
+                            break
+                    if flag == 0:
+                        continue
+                    else:
+                        for i in range(len(entity)):
+                            if i == 0:
+                                label_list[index + i] = 'B'
+                            elif i == len(entity) - 1:
+                                label_list[index + i] = 'E'
+                            else:
+                                label_list[index + i] = 'I'
                 except:
                     continue
+            # 根据postag，给更多实体标注
+            another_set = set()
+            for postag in dic["postag"]:
+                e = postag["word"]
+                if postag["pos"] in pos_list:
+                    another_set.add(e)
+            another_set = another_set - entity_set
+
+            for e in another_set:
+                try:
+                    index = sentence.index(e)
+                    flag = 0
+                    for i in range(index, index + len(e)):
+                        if label_list[i] != 'O':
+                            flag = 1
+                            break
+                    if flag == 1:
+                        continue
+                    else:
+                        for i in range(len(e)):
+                            if label_list[index + i] == 'O':
+                                if i == 0:
+                                    label_list[index + i] = 'B'
+                                elif i == len(e) - 1:
+                                    label_list[index + i] = 'E'
+                                else:
+                                    label_list[index + i] = 'I'
+                except:
+                    continue
+
             return token_list, label_list
 
     def path_reader(self, data_path, need_input=False, need_label=True):

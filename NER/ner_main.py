@@ -351,16 +351,16 @@ def adam_filter(model_path):
     last_name = get_last_checkpoint(model_path)
     if last_name is None:
         return
-    sess = tf.Session()
-    imported_meta = tf.train.import_meta_graph(
-        os.path.join(model_path, last_name + '.meta'))
-    imported_meta.restore(sess, os.path.join(model_path, last_name))
-    need_vars = []
-    for var in tf.global_variables():
-        if 'adam_v' not in var.name and 'adam_m' not in var.name:
-            need_vars.append(var)
-    saver = tf.train.Saver(need_vars)
-    saver.save(sess, os.path.join(model_path, 'model.ckpt'))
+    with tf.Session(graph=tf.Graph()) as sess:
+        imported_meta = tf.train.import_meta_graph(
+            os.path.join(model_path, last_name + '.meta'))
+        imported_meta.restore(sess, os.path.join(model_path, last_name))
+        need_vars = []
+        for var in tf.global_variables():
+            if 'adam_v' not in var.name and 'adam_m' not in var.name:
+                need_vars.append(var)
+        saver = tf.train.Saver(need_vars)
+        saver.save(sess, os.path.join(model_path, 'model.ckpt'))
 
 
 def result_to_pair(args, writer, examples, result):
@@ -543,6 +543,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_f1 = metrics.f1_score(
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
+                eval_acc = metrics.accuracy_score(
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
 
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -551,6 +553,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="eval/f1", simple_value=eval_f1), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/acc", simple_value=eval_acc), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
                 # early stopping 与 模型保存
@@ -600,6 +604,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         save_dir = os.path.join(args.output_dir, 'model')
         saver = tf.train.import_meta_graph(
             tf.train.latest_checkpoint(save_dir) + ".meta")
+        sess.run(tf.global_variables_initializer())
         # 打印张量名
         # tensor_list = [
         #     n.name for n in tf.get_default_graph().as_graph_def().node if 'older' in n.name]
