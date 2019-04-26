@@ -65,7 +65,7 @@ def get_args_parser():
                         help='save_checkpoints_steps')
     group2.add_argument('-save_summary_steps', type=int, default=500,
                         help='save_summary_steps.')
-    group2.add_argument('-filter_adam_var', type=bool, default=False,
+    group2.add_argument('-filter_adam_var', type=bool, default=True,
                         help='after training do filter Adam params from model and save no Adam params model in file.')
     group2.add_argument('-do_lower_case', type=bool, default=True,
                         help='Whether to lower case the input text.')

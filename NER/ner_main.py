@@ -496,7 +496,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         saver = tf.train.Saver()
 
         # 定义一些全局变量
-        best_eval_recall = 0.0
+        best_eval_loss = 1000000.0
         patience = 0
 
         # 开始训练
@@ -539,36 +539,37 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 处理评估结果，计算recall与f1
                 eval_preds_total = eval_preds_total[1:]
                 eval_truth_total = eval_truth_total[1:]
-                eval_recall = metrics.recall_score(
-                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_f1 = metrics.f1_score(
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
+                eval_recall = metrics.recall_score(
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_acc = metrics.accuracy_score(
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
+                eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="loss/eval_loss", simple_value=eval_loss_total / len(eval_examples)), ]), sess.run(tf.train.get_global_step()))
-                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
+                    tag="loss/eval_loss", simple_value=eval_loss_aver), ]), sess.run(tf.train.get_global_step()))
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="eval/f1", simple_value=eval_f1), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="eval/acc", simple_value=eval_acc), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
                 # early stopping 与 模型保存
-                if eval_recall <= best_eval_recall:
+                if eval_loss_aver >= best_eval_loss:
                     patience += 1
                     if patience >= 5:
                         print("early stoping!")
                         return
 
-                if eval_recall > best_eval_recall:
+                if eval_loss_aver < best_eval_loss:
                     patience = 0
-                    best_eval_recall = eval_recall
-                    saver.save(sess, os.path.join(save_dir, "model_{}_recall_{:.4f}.ckpt".format(
-                        sess.run(tf.train.get_global_step()), best_eval_recall)))
+                    best_eval_loss = eval_loss_aver
+                    saver.save(sess, os.path.join(save_dir, "model_{}_loss_{:.4f}.ckpt".format(
+                        sess.run(tf.train.get_global_step()), best_eval_loss)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
