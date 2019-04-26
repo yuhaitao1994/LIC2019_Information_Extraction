@@ -11,4 +11,5 @@ python3 ner_main.py \
     -num_train_epochs=15 \
     -save_summary_steps=500 \
     -save_checkpoints_steps=500 \
-    -filter_adam_var=True
+    -filter_adam_var=True \
+    -experiment_name=04262049

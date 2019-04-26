@@ -547,6 +547,16 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
                 eval_loss_aver = eval_loss_total / len(eval_examples)
 
+                # 评估命名实体识别的指标
+                output_eval_file = os.path.join(
+                    args.output_dir, "label_eval.txt")
+                with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
+                    result_to_pair(args, writer, eval_examples,
+                                   eval_preds_total)
+                eval_score, over_all = conlleval.return_report(
+                    output_eval_file)
+                print(''.join(eval_score))
+
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="loss/eval_loss", simple_value=eval_loss_aver), ]), sess.run(tf.train.get_global_step()))
@@ -556,6 +566,10 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="eval/acc", simple_value=eval_acc), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="ner/f1", simple_value=over_all.fscore), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="ner/recall", simple_value=over_all.rec), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
                 # early stopping 与 模型保存
@@ -652,7 +666,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         output_train_file = os.path.join(args.output_dir, "label_train.txt")
         with codecs.open(output_train_file, 'w', encoding='utf-8') as writer:
             result_to_pair(args, writer, train_examples, train_total)
-        train_score = conlleval.return_report(output_train_file)
+        train_score, _ = conlleval.return_report(output_train_file)
         print(''.join(train_score))
 
         # eval集预测
@@ -670,7 +684,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         output_eval_file = os.path.join(args.output_dir, "label_dev.txt")
         with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
             result_to_pair(args, writer, eval_examples, eval_total)
-        eval_score = conlleval.return_report(output_eval_file)
+        eval_score, _ = conlleval.return_report(output_eval_file)
         print(''.join(eval_score))
 
 
