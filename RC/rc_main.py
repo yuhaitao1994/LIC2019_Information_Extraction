@@ -284,10 +284,57 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
     return d
 
 
+def get_last_checkpoint(model_path):
+    if not os.path.exists(os.path.join(model_path, 'checkpoint')):
+        tf.logging.info('checkpoint file not exits:'.format(
+            os.path.join(model_path, 'checkpoint')))
+        return None
+    last = None
+    with codecs.open(os.path.join(model_path, 'checkpoint'), 'r', encoding='utf-8') as fd:
+        for line in fd:
+            line = line.strip().split(':')
+            if len(line) != 2:
+                continue
+            if line[0] == 'model_checkpoint_path':
+                last = line[1][2:-1]
+                break
+    return last
+
+
+def adam_filter(model_path):
+    """
+    去掉模型中的Adam相关参数，这些参数在测试的时候是没有用的
+    :param model_path: 
+    :return: 
+    """
+    last_name = get_last_checkpoint(model_path)
+    if last_name is None:
+        return
+    with tf.Session(graph=tf.Graph()) as sess:
+        imported_meta = tf.train.import_meta_graph(
+            os.path.join(model_path, last_name + '.meta'))
+        imported_meta.restore(sess, os.path.join(model_path, last_name))
+        need_vars = []
+        for var in tf.global_variables():
+            if 'adam_v' not in var.name and 'adam_m' not in var.name:
+                need_vars.append(var)
+        saver = tf.train.Saver(need_vars)
+        saver.save(sess, os.path.join(model_path, 'model.ckpt'))
+
+
+def result_to_pair(label_list, writer, data_file, result):
+    f = open(data_file, 'r')
+    for line, prediction in zip(f, result):
+        line = line.strip()
+        label = label_list[prediction]
+        writer.write(line + '\t' + str(label) + '\n')
+
+
 def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
     """
     训练和评估函数
     """
+
     # 生成tf_record文件
     train_examples = processor.get_train_examples(args.data_dir)
     eval_examples = processor.get_dev_examples(args.data_dir)
@@ -341,19 +388,21 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     with tf.Session(config=sess_config) as sess:
         # 构造模型
         input_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_ids')
         input_mask = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_mask')
         segment_ids = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32)
-        label_ids = tf.placeholder(shape=[None], dtype=tf.int32)
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
+        label_ids = tf.placeholder(
+            shape=[None], dtype=tf.int32, name='label_ids')
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
         total_loss, per_example_loss, logits, probabilities = create_model(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
             len(label_list), False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
-        pred_ids = tf.argmax(probabilities, axis=-1, output_type=tf.int32)
+        pred_ids = tf.argmax(probabilities, axis=-1,
+                             output_type=tf.int32, name="pred_ids")
 
         # 优化器
         train_op = optimization.create_optimizer(
@@ -381,7 +430,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         saver = tf.train.Saver()
 
         # 定义一些全局变量
-        best_eval_recall = 0.0
+        best_eval_loss = 1000000.0
         patience = 0
 
         # 开始训练
@@ -403,8 +452,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 验证集评估
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
                 eval_loss_total = 0.0
-                eval_preds_total = np.array([[0] * 128], dtype=np.int32)
-                eval_truth_total = np.array([[0] * 128], dtype=np.int32)
+                eval_preds_total = np.array([0], dtype=np.int32)
+                eval_truth_total = np.array([0], dtype=np.int32)
                 # 重新生成一次验证集数据
                 eval_data = eval_data.repeat()
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
@@ -417,47 +466,128 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     # 统计结果
                     eval_loss_total += eval_loss
                     eval_preds_total = np.concatenate(
-                        (eval_preds_total, eval_preds), axis=0)
+                        (eval_preds_total, eval_preds))
                     eval_truth_total = np.concatenate(
-                        (eval_truth_total, eval_truth), axis=0)
+                        (eval_truth_total, eval_truth))
 
                 # 处理评估结果，计算recall与f1
                 eval_preds_total = eval_preds_total[1:]
                 eval_truth_total = eval_truth_total[1:]
-                eval_recall = metrics.recall_score(
-                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_f1 = metrics.f1_score(
-                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
+                    eval_truth_total, eval_preds_total, average='macro')
+                eval_acc = metrics.accuracy_score(
+                    eval_truth_total, eval_preds_total)
+                eval_loss_aver = eval_loss_total / len(eval_examples)
+
+                # 评估实体关系分类的指标
 
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="loss/eval_loss", simple_value=eval_loss_total / len(eval_examples)), ]), sess.run(tf.train.get_global_step()))
-                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
-                    tag="eval/recall", simple_value=eval_recall), ]), sess.run(tf.train.get_global_step()))
+                    tag="loss/eval_loss", simple_value=eval_loss_aver), ]), sess.run(tf.train.get_global_step()))
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
                     tag="eval/f1", simple_value=eval_f1), ]), sess.run(tf.train.get_global_step()))
+                writer.add_summary(tf.Summary(value=[tf.Summary.Value(
+                    tag="eval/acc", simple_value=eval_acc), ]), sess.run(tf.train.get_global_step()))
                 writer.flush()
 
                 # early stopping 与 模型保存
-                if eval_recall <= best_eval_recall:
+                if eval_loss_aver >= best_eval_loss:
                     patience += 1
-                    if patience >= 3:
+                    if patience >= 5:
                         print("early stoping!")
                         return
 
-                if eval_recall > best_eval_recall:
+                if eval_loss_aver < best_eval_loss:
                     patience = 0
-                    best_eval_recall = eval_recall
-                    saver.save(sess, os.path.join(save_dir, "model_{}_recall_{:.4f}.ckpt".format(
-                        sess.run(tf.train.get_global_step()), best_eval_recall)))
+                    best_eval_loss = eval_loss_aver
+                    saver.save(sess, os.path.join(save_dir, "model_{}_loss_{:.4f}.ckpt".format(
+                        sess.run(tf.train.get_global_step()), best_eval_loss)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
 
-def predict(args):
+def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     """
     预测函数
     """
+    # 生成3个examples
+    predict_examples = processor.get_test_examples(args.data_dir)
+    predict_file = os.path.join(args.output_dir, "predict.tf_record")
+    filed_based_convert_examples_to_features(
+        predict_examples, label_list, args.max_seq_length,
+        tokenizer, predict_file, args.output_dir, mode="test")
+    tf.logging.info("***** Running prediction*****")
+    tf.logging.info("  Num examples = %d", len(predict_examples))
+    tf.logging.info("  Batch size = %d", args.batch_size)
+    train_examples = processor.get_train_examples(args.data_dir)
+    eval_examples = processor.get_dev_examples(args.data_dir)
+    train_file = os.path.join(args.output_dir, "train.tf_record")
+    eval_file = os.path.join(args.output_dir, "eval.tf_record")
+    # 生成数据集
+    train_data = file_based_dataset(input_file=train_file, batch_size=args.batch_size,
+                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
+                                   seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    predict_data = file_based_dataset(input_file=predict_file, batch_size=args.batch_size,
+                                      seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
+    train_iter = train_data.make_one_shot_iterator().get_next()
+    eval_iter = eval_data.make_one_shot_iterator().get_next()
+    predict_iter = predict_data.make_one_shot_iterator().get_next()
+
+    # 开启计算图
+    with tf.Session(config=sess_config) as sess:
+        # 从文件中读取计算图
+        save_dir = os.path.join(args.output_dir, 'model')
+        saver = tf.train.import_meta_graph(
+            tf.train.latest_checkpoint(save_dir) + ".meta")
+        sess.run(tf.global_variables_initializer())
+        # 打印张量名
+        # tensor_list = [
+        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'older' in n.name]
+        # print(tensor_list)
+        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
+        # 通过张量名获取模型的占位符和参数
+        input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
+        input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
+        segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
+        label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
+        sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
+            'is_training:0'), tf.constant(False, dtype=tf.bool)))
+        # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
+        pred_ids = tf.get_default_graph().get_tensor_by_name('pred_ids:0')
+
+        # test集预测
+        predict_total = np.array([0] * 128, dtype=np.int32)
+        for _ in range(0, int(len(predict_examples) / args.batch_size) + 1):
+            # predict feed
+            predict_batch = sess.run(predict_iter)
+            predict_res = sess.run(pred_ids, feed_dict={
+                input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
+                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids']})
+            predict_total = np.concatenate((predict_total, predict_res))
+        # 处理评估结果，计算recall与f1
+        predict_total = predict_total[1:]
+        output_predict_file = os.path.join(
+            args.output_dir, "prediction_test.txt")
+        with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(label_list, writer, os.path.join(
+                args.data_dir, 'test.txt'), predict_total)
+
+        # eval集预测
+        eval_total = np.array([0], dtype=np.int32)
+        for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+            # predict feed
+            eval_batch = sess.run(eval_iter)
+            eval_res = sess.run(pred_ids, feed_dict={
+                input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
+                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+            eval_total = np.concatenate((eval_total, eval_res))
+        # 处理评估结果，计算recall与f1
+        eval_total = eval_total[1:]
+        output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
+        with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(label_list, writer, os.path.join(
+                args.data_dir, 'test.txt'), eval_total)
 
 
 if __name__ == '__main__':
@@ -508,8 +638,8 @@ if __name__ == '__main__':
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
     # 创建ner dataprocessor对象
-    processor = processors[args.ner](args.output_dir)
-    label_list = label_list = processor.get_labels()
+    processor = processors[args.rc](args.output_dir)
+    label_list = processor.get_labels(labels=args.label_list)
 
     tokenizer = tokenization.FullTokenizer(
         vocab_file=args.vocab_file, do_lower_case=args.do_lower_case)
@@ -523,8 +653,9 @@ if __name__ == '__main__':
     if args.do_train and args.do_eval:
         train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
                        bert_config=bert_config, sess_config=session_config, label_list=label_list)
-        # if args.filter_adam_var:
-        #     adam_filter(os.path.join(args.output_dir, 'model'))
+        if args.filter_adam_var:
+            adam_filter(os.path.join(args.output_dir, 'model'))
 
     if args.do_predict:
-        predict(args=args)
+        predict(args=args, processor=processor, tokenizer=tokenizer,
+                bert_config=bert_config, sess_config=session_config, label_list=label_list)
