@@ -19,7 +19,8 @@ def get_args_parser():
     bert_path = '../bert/bert_model'
     root_path = '../'
 
-    parser.add_argument('-experiment_name', type=str, help='name')
+    parser.add_argument('-experiment_name', type=str,
+                        help='name', required=True)
     parser.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'data/NER_data'),
                         help='train, dev and test data dir')
     parser.add_argument('-bert_config_file', type=str,
