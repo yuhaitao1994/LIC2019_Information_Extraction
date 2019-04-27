@@ -480,6 +480,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估实体关系分类的指标
+                
 
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -653,8 +654,8 @@ if __name__ == '__main__':
     if args.do_train and args.do_eval:
         train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
                        bert_config=bert_config, sess_config=session_config, label_list=label_list)
-        if args.filter_adam_var:
-            adam_filter(os.path.join(args.output_dir, 'model'))
+        # if args.filter_adam_var:
+        #     adam_filter(os.path.join(args.output_dir, 'model'))
 
     if args.do_predict:
         predict(args=args, processor=processor, tokenizer=tokenizer,

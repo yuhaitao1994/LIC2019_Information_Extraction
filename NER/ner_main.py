@@ -345,6 +345,11 @@ def get_last_checkpoint(model_path):
 def adam_filter(model_path):
     """
     去掉模型中的Adam相关参数，这些参数在测试的时候是没有用的
+    !!!!!!
+    !!!!!
+    !!!!
+    !!
+    注意：这个函数目前是有问题的，加载处理之后的模型预测是错误的
     :param model_path: 
     :return: 
     """
@@ -751,8 +756,8 @@ if __name__ == '__main__':
     if args.do_train and args.do_eval:
         train_and_eval(args=args, processor=processor, tokenizer=tokenizer,
                        bert_config=bert_config, sess_config=session_config, label_list=label_list)
-        if args.filter_adam_var:
-            adam_filter(os.path.join(args.output_dir, 'model'))
+        # if args.filter_adam_var:
+        #     adam_filter(os.path.join(args.output_dir, 'model'))
 
     if args.do_predict:
         predict(args=args, processor=processor, tokenizer=tokenizer,
