@@ -9,6 +9,7 @@ import tensorflow as tf
 import codecs
 import pickle
 import sys
+from sklearn import metrics
 
 import tf_metrics
 sys.path.append("../")
@@ -76,6 +77,8 @@ class RCProcessor(DataProcessor):
                     with codecs.open(labels, 'r', encoding='utf-8') as fd:
                         for line in fd:
                             self.labels.append(line.strip().split()[-1])
+                    for i in range(len(self.labels) - 1):
+                        self.labels.append('RE_' + self.labels[i])
                 else:
                     # 否则通过传入的参数，按照逗号分割
                     self.labels = labels.split(',')
@@ -356,11 +359,11 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     train_file = os.path.join(args.output_dir, "train.tf_record")
     if not os.path.exists(train_file):
         filed_based_convert_examples_to_features(
-            train_examples, label_list, args.max_seq_length, tokenizer, train_file, args.output_dir)
+            train_examples, label_list, args.max_seq_length, tokenizer, train_file)
     eval_file = os.path.join(args.output_dir, "eval.tf_record")
     if not os.path.exists(eval_file):
         filed_based_convert_examples_to_features(
-            eval_examples, label_list, args.max_seq_length, tokenizer, eval_file, args.output_dir)
+            eval_examples, label_list, args.max_seq_length, tokenizer, eval_file)
 
     """
     -------------分割线-------------
@@ -399,8 +402,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
         total_loss, per_example_loss, logits, probabilities = create_model(
-            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
-            len(label_list), False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list))
         pred_ids = tf.argmax(probabilities, axis=-1,
                              output_type=tf.int32, name="pred_ids")
 
@@ -430,7 +432,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         saver = tf.train.Saver()
 
         # 定义一些全局变量
-        best_eval_loss = 1000000.0
+        best_eval_acc = 0.0
         patience = 0
 
         # 开始训练
@@ -438,9 +440,9 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         for go in range(1, num_train_steps + 1):
             # feed
             train_batch = sess.run(train_iter)
-            loss, preds, op = sess.run([total_loss, pred_ids, train_op], feed_dict={
-                                       input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
-                                       segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
+            loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
+                input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
 
             if go % args.save_summary_steps == 0:
                 # 训练log
@@ -491,17 +493,17 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 writer.flush()
 
                 # early stopping 与 模型保存
-                if eval_loss_aver >= best_eval_loss:
+                if eval_acc <= best_eval_acc:
                     patience += 1
                     if patience >= 5:
                         print("early stoping!")
                         return
 
-                if eval_loss_aver < best_eval_loss:
+                if eval_acc > best_eval_acc:
                     patience = 0
-                    best_eval_loss = eval_loss_aver
+                    best_eval_acc = eval_acc
                     saver.save(sess, os.path.join(save_dir, "model_{}_loss_{:.4f}.ckpt".format(
-                        sess.run(tf.train.get_global_step()), best_eval_loss)))
+                        sess.run(tf.train.get_global_step()), best_eval_acc)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
@@ -514,8 +516,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     predict_examples = processor.get_test_examples(args.data_dir)
     predict_file = os.path.join(args.output_dir, "predict.tf_record")
     filed_based_convert_examples_to_features(
-        predict_examples, label_list, args.max_seq_length,
-        tokenizer, predict_file, args.output_dir, mode="test")
+        predict_examples, label_list, args.max_seq_length, tokenizer, predict_file)
     tf.logging.info("***** Running prediction*****")
     tf.logging.info("  Num examples = %d", len(predict_examples))
     tf.logging.info("  Batch size = %d", args.batch_size)
@@ -587,7 +588,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
         with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
             result_to_pair(label_list, writer, os.path.join(
-                args.data_dir, 'test.txt'), eval_total)
+                args.data_dir, 'dev.txt'), eval_total)
 
 
 if __name__ == '__main__':
@@ -596,7 +597,7 @@ if __name__ == '__main__':
     """
     args = get_args_parser()
     args.output_dir = os.path.join(
-        args.output_dir, 'NER_model_' + args.experiment_name)
+        args.output_dir, 'RC_model_' + args.experiment_name)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
     tf.logging.set_verbosity(tf.logging.INFO)
     if True:
@@ -642,6 +643,7 @@ if __name__ == '__main__':
     # 创建ner dataprocessor对象
     processor = processors[args.rc](args.output_dir)
     label_list = processor.get_labels(labels=args.label_list)
+    print(label_list)
 
     tokenizer = tokenization.FullTokenizer(
         vocab_file=args.vocab_file, do_lower_case=args.do_lower_case)

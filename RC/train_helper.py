@@ -14,7 +14,6 @@ __all__ = ['get_args_parser']
 
 
 def get_args_parser():
-    from bert_rc import __version__
     parser = argparse.ArgumentParser()
 
     bert_path = '../bert/bert_model'
@@ -34,7 +33,7 @@ def get_args_parser():
                         help='train, dev and test data dir')
     parser.add_argument('-bert_config_file', type=str,
                         default=os.path.join(bert_path, 'bert_config.json'))
-    parser.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'data'),
+    parser.add_argument('-output_dir', type=str, default=root_path,
                         help='directory of a pretrained BERT model')
     parser.add_argument('-init_checkpoint', type=str, default=os.path.join(bert_path, 'bert_model.ckpt'),
                         help='Initial checkpoint (usually from a pre-trained BERT model).')
@@ -87,6 +86,5 @@ def get_args_parser():
                         help='turn on tensorflow logging for debug')
     parser.add_argument('-rc', type=str, default='RC',
                         help='which modle to train')
-    parser.add_argument('-version', action='version',
-                        version='%(prog)s ' + __version__)
+
     return parser.parse_args()
