@@ -555,8 +555,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 评估命名实体识别的指标
                 output_eval_file = os.path.join(
                     args.output_dir, "label_eval.txt")
-                with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
-                    result_to_pair(args, writer, eval_examples,
+                with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer_1:
+                    result_to_pair(args, writer_1, eval_examples,
                                    eval_preds_total)
                 eval_score, over_all = conlleval.return_report(
                     output_eval_file)
@@ -698,6 +698,8 @@ if __name__ == '__main__':
     开始执行
     """
     args = get_args_parser()
+    args.output_dir = os.path.join(
+        args.output_dir, 'NER_model_' + args.experiment_name)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
     tf.logging.set_verbosity(tf.logging.INFO)
     if True:
