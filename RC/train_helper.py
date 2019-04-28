@@ -20,13 +20,21 @@ def get_args_parser():
     bert_path = '../bert/bert_model'
     root_path = '../data/'
 
-    parser.add_argument('-experiment_name', type=str,
-                        help='name', required=True)
+    def str2bool(v):
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Unsupported value encountered.')
+
+    parser.add_argument('-experiment_name', type=str, default='1',
+                        help='name')
     parser.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'RC_data'),
                         help='train, dev and test data dir')
     parser.add_argument('-bert_config_file', type=str,
                         default=os.path.join(bert_path, 'bert_config.json'))
-    parser.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'data', 'RC_model_' + parser.parse_args().experiment_name),
+    parser.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'data'),
                         help='directory of a pretrained BERT model')
     parser.add_argument('-init_checkpoint', type=str, default=os.path.join(bert_path, 'bert_model.ckpt'),
                         help='Initial checkpoint (usually from a pre-trained BERT model).')
@@ -34,11 +42,11 @@ def get_args_parser():
                         help='')
     parser.add_argument('-max_seq_length', type=int, default=150,
                         help='The maximum total input sequence length after WordPiece tokenization.')
-    parser.add_argument('-do_train', type=bool, default=False,
+    parser.add_argument('-do_train', type=str2bool, default=False,
                         help='Whether to run training.')
-    parser.add_argument('-do_eval', type=bool, default=False,
+    parser.add_argument('-do_eval', type=str2bool, default=False,
                         help='Whether to run eval on the dev set.')
-    parser.add_argument('-do_predict', type=bool, default=True,
+    parser.add_argument('-do_predict', type=str2bool, default=True,
                         help='Whether to run the predict in inference mode on the test set.')
     parser.add_argument('-batch_size', type=int, default=32,
                         help='Total batch size for training, eval and predict.')
@@ -63,11 +71,11 @@ def get_args_parser():
                         help='save_checkpoints_steps')
     parser.add_argument('-save_summary_steps', type=int, default=1000,
                         help='save_summary_steps.')
-    parser.add_argument('-filter_adam_var', type=bool, default=False,
+    parser.add_argument('-filter_adam_var', type=str2bool, default=False,
                         help='after training do filter Adam params from model and save no Adam params model in file.')
-    parser.add_argument('-do_lower_case', type=bool, default=True,
+    parser.add_argument('-do_lower_case', type=str2bool, default=True,
                         help='Whether to lower case the input text.')
-    parser.add_argument('-clean', type=bool, default=True)
+    parser.add_argument('-clean', type=str2bool, default=True)
     parser.add_argument('-device_map', type=str, default='1',
                         help='witch device using to train')
 

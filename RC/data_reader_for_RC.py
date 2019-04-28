@@ -61,7 +61,7 @@ class MyDataReader(object):
         #     self.train_data_list_path, self._postag_dict_path)
 
     def _load_label_dict(self, dict_name):
-        """load label dict from file"""
+        """这个函数重写了"""
         label_dict = {}
         label_to_eng = {}
         pattern = re.compile(r'\s+')
@@ -71,6 +71,10 @@ class MyDataReader(object):
                 label_to_eng[p] = p_eng
                 label_dict[p_eng] = idx
                 self._p_map_eng_dict[p] = p_eng
+                if p != '木有关系':
+                    label_to_eng['反_' + p] = 'RE_' + p_eng
+                    label_dict['RE_' + p_eng] = idx + 51
+                    self._p_map_eng_dict['反_' + p] = 'RE_' + p_eng
         return label_dict, label_to_eng
 
     def _load_dict_from_file(self, dict_name, bias=0):
@@ -86,7 +90,7 @@ class MyDataReader(object):
 
     def _cal_mark_single_slot(self, spo_list, sentence):
         """
-        Calculate the value of the label 
+        Calculate the value of the label
         """
         mark_list = [0] * len(self._feature_dict['label_dict'])
         for spo in spo_list:
@@ -129,6 +133,9 @@ class MyDataReader(object):
         # 一个样本： text 主体 客体 类别
         sample_list = []
         if mode == 'train':
+            """
+            训练集完全使用真实体作为positive，postag中的作为假实体negative
+            """
             real_entity = []
             fake_entity = []
             # 生成positive sample
@@ -142,26 +149,38 @@ class MyDataReader(object):
                     sentence + '\t' + sub + '\t' + obj + '\t' + label_dict[spo['predicate']])
                 if i % 2 == 0:
                     sample_list.append(
-                        sentence + '\t' + obj + '\t' + sub + '\t' + label_dict['木有关系'])
+                        sentence + '\t' + obj + '\t' + sub + '\t' + label_dict['反_' + spo['predicate']])
                 i += 1
             # 生成Negative sample
-            # 统计假实体
-            i = 0
-            start = -1
-            end = 0
-            while i < len(ner_data['label']):
-                if ner_data['label'][i] == 'B':
-                    start = i
-                elif ner_data['label'][i] == 'E':
-                    end = i
-                    if start != -1:
-                        if ''.join(ner_data['text'][start:end + 1]) not in real_entity:
-                            fake_entity.append(
-                                ''.join(ner_data['text'][start:end + 1]))
-                elif ner_data['label'][i] == 'O':
-                    start = -1
-                i += 1
-            # 控制一半的假实体与真实体组成几个negative sample
+            # 统计假实体, 使用postag中的
+            for item in dic['postag']:
+                if item['pos'] in ['nz', 'ns', 'nw', 'nr', 'nt']:
+                    flag = 0
+                    for r_e in real_entity:
+                        if (item['word'] in r_e) or (r_e in item['word']):
+                            flag = 1
+                            break
+                    if flag == 0:
+                        fake_entity.append(item['word'])
+                    else:
+                        continue
+
+            # i = 0
+            # start = -1
+            # end = 0
+            # while i < len(ner_data['label']):
+            #     if ner_data['label'][i] == 'B':
+            #         start = i
+            #     elif ner_data['label'][i] == 'E':
+            #         end = i
+            #         if start != -1:
+            #             if ''.join(ner_data['text'][start:end + 1]) not in real_entity:
+            #                 fake_entity.append(
+            #                     ''.join(ner_data['text'][start:end + 1]))
+            #     elif ner_data['label'][i] == 'O':
+            #         start = -1
+            #     i += 1
+            # 控制一半的假实体与真实体组成几个negative sample,假实体之间也可以组成negative sample.
             if len(fake_entity) > 0:
                 i = 0
                 for f_e in fake_entity:
@@ -171,7 +190,7 @@ class MyDataReader(object):
                             sentence + '\t' + f_e + '\t' + real_entity[0] + '\t' + label_dict['木有关系'])
                     else:
                         sample_list.append(
-                            sentence + '\t' + real_entity[0] + '\t' + f_e + '\t' + label_dict['木有关系'])
+                            sentence + '\t' + fake_entity[random.randint(0, i)] + '\t' + f_e + '\t' + label_dict['木有关系'])
                     i += 1
                     if i > int(len(fake_entity) / 2):
                         break
@@ -194,6 +213,13 @@ class MyDataReader(object):
                     start = -1
                 i += 1
 
+            # 用postag对entity进行修正
+            for i in range(len(entity)):
+                for item in dic['postag']:
+                    if entity[i] in item['word']:
+                        entity[i] = item['word']
+                        break
+
             if mode == 'dev':
                 for i in range(len(entity)):
                     for j in range(len(entity)):
@@ -205,6 +231,11 @@ class MyDataReader(object):
                                 if spo['subject'] in entity[i] and spo['object'] in entity[j]:
                                     sample_list.append(
                                         sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
+                                    flag = 1
+                                    break
+                                elif spo['subject'] in entity[j] and spo['object'] in entity[i]:
+                                    sample_list.append(
+                                        sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['反_' + spo['predicate']])
                                     flag = 1
                                     break
                             if flag == 0:
@@ -307,8 +338,8 @@ if __name__ == '__main__':
     data_generator = MyDataReader(
         postag_dict_path='../dict/postag_dict',
         label_dict_path='../dict/p_eng',
-        train_data_list_path='../data/ori_data/train_demo.json',
-        dev_data_list_path='../data/ori_data/dev_demo.json',
+        train_data_list_path='../data/ori_data/train_data.json',
+        dev_data_list_path='../data/ori_data/dev_data.json',
         train_ner_file='../data/ori_data/label_train.txt',
         dev_ner_file='../data/ori_data/label_dev.txt')
 
@@ -326,7 +357,7 @@ if __name__ == '__main__':
                 f.write(sample + '\n')
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/ori_data/test_demo.json', test_ner_file='../data/ori_data/label_test.txt')
+        test_file_path='../data/ori_data/test1_data_postag.json', test_ner_file='../data/ori_data/label_test.txt')
     with open("../data/RC_data/test.txt", 'w') as f:
         for sample_list in tqdm(test()):
             for sample in sample_list:

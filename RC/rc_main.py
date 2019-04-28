@@ -480,7 +480,6 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估实体关系分类的指标
-                
 
                 # 评估log
                 writer.add_summary(tf.Summary(value=[tf.Summary.Value(
@@ -596,6 +595,8 @@ if __name__ == '__main__':
     开始执行
     """
     args = get_args_parser()
+    args.output_dir = os.path.join(
+        args.output_dir, 'NER_model_' + args.experiment_name)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
     tf.logging.set_verbosity(tf.logging.INFO)
     if True:
