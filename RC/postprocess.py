@@ -291,8 +291,9 @@ if __name__ == '__main__':
     # reload(sys)
     # sys.setdefaultencoding('utf-8')
     parser = argparse.ArgumentParser()
+    parser.add_argument("--experiment_name", type=str, default='demo/')
     parser.add_argument("--golden_dir", type=str, default='../data/ori_data/')
-    parser.add_argument("--predict_dir", type=str, default='../data/RC_model/')
+    parser.add_argument("--predict_dir", type=str, default='../data/')
     parser.add_argument("--result_dir", type=str, default='../data/RC_result/')
     parser.add_argument("--eng_label_dic_file",
                         type=str, default='../dict/p_eng')
@@ -307,6 +308,9 @@ if __name__ == '__main__':
     parser.add_argument("--alias_file", type=str,
                         default='', help="entities alias dictionary")
     args = parser.parse_args()
+    args.predict_dir = os.path.join(
+        args.predict_dir, 'RC_model_' + args.experiment_name)
+    print(args.predict_dir)
     # 生成dev和test的结果文件
     postprocess(args.golden_dir, args.predict_dir,
                 args.eng_label_dic_file, args.result_dir, has_type_dic=True)
