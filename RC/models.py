@@ -144,7 +144,7 @@ def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_i
                                                   dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
             pos2_head_embedding = tf.get_variable('pos_2_head', shape=[pos_tot, position_dim],
                                                   dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
-            pos1_head_embedding = tf.get_variable('pos_1', shape=[pos_tot, position_dim],
+            pos2_tail_embedding = tf.get_variable('pos_2_tail', shape=[pos_tot, position_dim],
                                                   dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
             input_pos1_head = tf.nn.embedding_lookup(
                 pos1_head_embedding, pos1_head)
