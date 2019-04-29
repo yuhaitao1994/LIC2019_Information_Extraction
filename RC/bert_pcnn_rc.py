@@ -11,7 +11,6 @@ import pickle
 import sys
 from sklearn import metrics
 
-import tf_metrics
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
 from models import create_model_PCNN, InputExample
@@ -231,30 +230,30 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     pos1_tail = -1
     pos2_head = -1
     pos2_tail = -1
-    for i in range(len(tokens)-1):
-        cut = tokens[i:min(i+len(sub), len(tokens)-1)]
+    for i in range(len(tokens) - 1):
+        cut = tokens[i:min(i + len(sub), len(tokens) - 1)]
         if cut == sub[0:len(cut)]:
             pos1_head = i
-            pos1_tail = i+len(cut)-1
+            pos1_tail = i + len(cut) - 1
             break
     if pos1_head == -1:
-        pos1_head = pos1_tail = len(tokens)-1
+        pos1_head = pos1_tail = len(tokens) - 1
         print(tokens)
         raise ValueError
 
-    for i in range(len(tokens)-1):
-        cut = tokens[i:min(i+len(obj), len(tokens)-1)]
+    for i in range(len(tokens) - 1):
+        cut = tokens[i:min(i + len(obj), len(tokens) - 1)]
         if cut == obj[0:len(cut)]:
             pos2_head = i
-            pos2_tail = i+len(cut)-1
+            pos2_tail = i + len(cut) - 1
             break
     if pos2_head == -1:
-        pos2_head = pos2_tail = len(tokens)-1
+        pos2_head = pos2_tail = len(tokens) - 1
         print(tokens)
         raise ValueError
 
     # 写入position和pcnn的mask
-    position_ids = []
+    position_ids = np.zeros([max_seq_length, 4], dtype=np.int32)
     pcnn_masks = []
 
     pos_min_h = 0
@@ -273,7 +272,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         pos_max_t = pos1_tail
 
     for i in range(len(tokens)):
-        position_ids.append([i-pos1_head, i-pos1_tail, i-pos2_head, i-pos2_tail])
+        position_ids[i] = np.array(
+            [i - pos1_head, i - pos1_tail, i - pos2_head, i - pos2_tail])
         if i < pos_min_h:
             pcnn_masks.append(1)
         elif i <= pos_min_t:
@@ -284,7 +284,6 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
             pcnn_masks.append(0)
         else:
             pcnn_masks.append(3)
-
 
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
@@ -298,10 +297,10 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         input_ids.append(0)
         input_mask.append(0)
         segment_ids.append(0)
-        position_ids.append([i-pos1_head, i-pos1_tail, i-pos2_head, i-pos2_tail])
+        position_ids[i] = np.array(
+            [i - pos1_head, i - pos1_tail, i - pos2_head, i - pos2_tail])
         pcnn_masks.append(0)
         i += 1
-
 
     assert len(input_ids) == max_seq_length
     assert len(input_mask) == max_seq_length
@@ -369,7 +368,8 @@ def filed_based_convert_examples_to_features(
         features["input_mask"] = create_int_feature(feature.input_mask)
         features["segment_ids"] = create_int_feature(feature.segment_ids)
         features["label_ids"] = create_int_feature([feature.label_id])
-        features["position_ids"] = create_int_feature(feature.position_ids)
+        features["position_ids"] = tf.train.Feature(
+            bytes_list=tf.train.BytesList(value=[feature.position_ids.tostring()]))
         features["pcnn_masks"] = create_int_feature(feature.pcnn_masks)
         # tf.train.Example/Feature 是一种协议，方便序列化？？？
         tf_example = tf.train.Example(
@@ -384,7 +384,7 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "label_ids": tf.FixedLenFeature([], tf.int64),
-        "position_ids": tf.FixedLenFeature([seq_length, 4], tf.int64),
+        "position_ids": tf.FixedLenFeature([], tf.string),
         "pcnn_masks": tf.FixedLenFeature([seq_length], tf.int64)
     }
 
@@ -394,6 +394,9 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
             t = example[name]
             if t.dtype == tf.int64:
                 t = tf.to_int32(t)
+            else:
+                t = tf.reshape(tf.decode_raw(t, tf.int32),
+                               [-1, 4])  # position embedding
             example[name] = t
         return example
 
@@ -520,9 +523,9 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
             shape=[None], dtype=tf.int32, name='label_ids')
-        position_ids= tf.placeholder(
+        position_ids = tf.placeholder(
             shape=[None, args.max_seq_length, 4], dtype=tf.int32, name='position_ids')
-        pcnn_masks = = tf.placeholder(
+        pcnn_masks = tf.placeholder(
             shape=[None, args.max_seq_length], dtype=tf.int32, name='pcnn_masks')
 
         is_training = tf.get_variable(
@@ -569,7 +572,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             train_batch = sess.run(train_iter)
             loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
-                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids'], 
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids'],
                 position_ids: train_batch['position_ids', pcnn_masks: train_batch['pcnn_masks']]})
 
             if go % args.save_summary_steps == 0:
@@ -594,7 +597,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_batch = sess.run(eval_iter)
                     eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
                         input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'], 
+                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
                         position_ids: eval_batch['position_ids'], pcnn_masks: eval_batch['pcnn_masks']})
                     # 统计结果
                     eval_loss_total += eval_loss

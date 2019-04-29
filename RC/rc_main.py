@@ -11,7 +11,6 @@ import pickle
 import sys
 from sklearn import metrics
 
-import tf_metrics
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
 from models import create_model, InputFeatures, InputExample
