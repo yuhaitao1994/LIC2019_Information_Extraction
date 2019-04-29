@@ -45,7 +45,7 @@ class DataProcessor(object):
                     continue
                 data.append(context[3])
                 data.append(context[0])
-                data.append(context[1] + context[2])
+                data.append(context[1] + '&' + context[2])
                 lines.append(data)
             return lines
 
@@ -176,7 +176,10 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
 
     if tokens_b:
         for token in tokens_b:
-            tokens.append(token)
+            if token == '&':
+                tokens.append("[unused1]")  # 两个实体之间用一个特殊字符隔开
+            else:
+                tokens.append(token)
             segment_ids.append(1)
         tokens.append("[SEP]")
         segment_ids.append(1)
@@ -459,7 +462,9 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 重新生成一次验证集数据
                 eval_data = eval_data.repeat()
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
-                for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+                # for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+                # eval集太大，这样每次用全部的话太耗费时间
+                for _ in range(1000):
                     # eval feed
                     eval_batch = sess.run(eval_iter)
                     eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
@@ -502,7 +507,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 if eval_acc > best_eval_acc:
                     patience = 0
                     best_eval_acc = eval_acc
-                    saver.save(sess, os.path.join(save_dir, "model_{}_loss_{:.4f}.ckpt".format(
+                    saver.save(sess, os.path.join(save_dir, "model_{}_acc_{:.4f}.ckpt".format(
                         sess.run(tf.train.get_global_step()), best_eval_acc)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))

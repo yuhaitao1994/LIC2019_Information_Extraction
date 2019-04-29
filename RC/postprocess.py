@@ -58,8 +58,8 @@ def load_predict_result(predict_filename):
                 if type(spo_item) is not dict or 'subject' not in spo_item \
                         or 'predicate' not in spo_item \
                         or 'object' not in spo_item or \
-                        not isinstance(spo_item['subject'], basestring) or \
-                        not isinstance(spo_item['object'], basestring):
+                        not isinstance(spo_item['subject'], str) or \
+                        not isinstance(spo_item['object'], str):
                     ret_code = SCHEMA_ERROR
                     return predict_result, ret_code
                 s = del_bookname(spo_item['subject'].lower())
@@ -76,7 +76,7 @@ def load_test_dataset(golden_filename):
     with open(golden_filename) as gf:
         for line in gf:
             try:
-                line = line.decode('utf8').strip()
+                line = line.strip()
             except:
                 ret_code = ENCODING_ERROR
                 return golden_dict, ret_code
@@ -148,37 +148,39 @@ def calc_pr(predict_filename, alias_filename, location_filename,
             golden_filename):
     """calculate precision, recall, f1"""
     ret_info = {}
-    # load location dict
-    loc_dict, ret_code = load_dict(location_filename)
-    if ret_code != SUCCESS:
-        ret_info['errorCode'] = ret_code
-        ret_info['errorMsg'] = CODE_INFO[ret_code]
-        print >> sys.stderr, 'loc file is error'
-        return ret_info
+    # # load location dict
+    # loc_dict, ret_code = load_dict(location_filename)
+    # if ret_code != SUCCESS:
+    #     ret_info['errorCode'] = ret_code
+    #     ret_info['errorMsg'] = CODE_INFO[ret_code]
+    #     print >> sys.stderr, 'loc file is error'
+    #     return ret_info
 
-    # load alias dict
-    alias_dict, ret_code = load_dict(alias_filename)
-    if ret_code != SUCCESS:
-        ret_info['errorCode'] = ret_code
-        ret_info['errorMsg'] = CODE_INFO[ret_code]
-        print >> sys.stderr, 'alias file is error'
-        return ret_info
+    # # load alias dict
+    # alias_dict, ret_code = load_dict(alias_filename)
+    # if ret_code != SUCCESS:
+    #     ret_info['errorCode'] = ret_code
+    #     ret_info['errorMsg'] = CODE_INFO[ret_code]
+    #     print >> sys.stderr, 'alias file is error'
+    #     return ret_info
     # load test dataset
     golden_dict, ret_code = load_test_dataset(golden_filename)
     if ret_code != SUCCESS:
         ret_info['errorCode'] = ret_code
         ret_info['errorMsg'] = CODE_INFO[ret_code]
-        print >> sys.stderr, 'golden file is error'
+        print(sys.stderr, 'golden file is error')
         return ret_info
     # load predict result
     predict_result, ret_code = load_predict_result(predict_filename)
     if ret_code != SUCCESS:
         ret_info['errorCode'] = ret_code
         ret_info['errorMsg'] = CODE_INFO[ret_code]
-        print >> sys.stderr, 'predict file is error'
+        print(sys.stderr, 'predict file is error')
         return ret_info
 
     # evaluation
+    alias_dict = {}
+    loc_dict = {}
     correct_sum, predict_sum, recall_sum = 0.0, 0.0, 0.0
     for sent in golden_dict:
         golden_spo_set = golden_dict[sent]
@@ -189,9 +191,9 @@ def calc_pr(predict_filename, alias_filename, location_filename,
         for spo in predict_spo_set:
             if is_spo_correct(spo, golden_spo_set, alias_dict, loc_dict):
                 correct_sum += 1
-    print >> sys.stderr, 'correct spo num = ', correct_sum
-    print >> sys.stderr, 'submitted spo num = ', predict_sum
-    print >> sys.stderr, 'golden set spo num = ', recall_sum
+    print(sys.stderr, 'correct spo num = ', correct_sum)
+    print(sys.stderr, 'submitted spo num = ', predict_sum)
+    print(sys.stderr, 'golden set spo num = ', recall_sum)
     precision = correct_sum / predict_sum if predict_sum > 0 else 0.0
     recall = correct_sum / recall_sum if recall_sum > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) \
@@ -250,8 +252,8 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
             dic = json.loads(line.strip())
             dic_res = {"text": dic['text'], "spo_list": []}
             sentence_ori = ''.join(s.strip() for s in dic['text'].split())
-            while pre_list[0] == sentence_ori[0:len(pre_list[0])]:
-                if pre_list[4] != 'NORELATION':
+            while pre_list and pre_list[0] == sentence_ori[0:len(pre_list[0])]:
+                if pre_list[4] != 'NORELATION' and pre_list[4][0:2] != 'RE':
                     dic_res["spo_list"].append({
                         "predicate": eng_label_dic[pre_list[4]],
                         "subject": pre_list[1],
@@ -260,8 +262,6 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
                         "object_type": type_dic[eng_label_dic[pre_list[4]]]['object_type']
                     })
                 pre_list = f_pre.readline().strip().split()
-                if len(pre_list) != 5:
-                    break
             res = json.dumps(dic_res, ensure_ascii=False)
             f_res.write(res + '\n')
     f_pre.close()
@@ -310,12 +310,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.predict_dir = os.path.join(
         args.predict_dir, 'RC_model_' + args.experiment_name)
-    print(args.predict_dir)
     # 生成dev和test的结果文件
     postprocess(args.golden_dir, args.predict_dir,
                 args.eng_label_dic_file, args.result_dir, has_type_dic=True)
 
     # # 计算F1
-    # ret_info = calc_pr(args.predict_filename, args.alias_filename, args.location_filename,
-    #                    args.golden_filename)
-    # print json.dumps(ret_info)
+    ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.zip'),
+                       '', '', os.path.join(args.golden_dir, 'dev_data.json'))
+    print(json.dumps(ret_info))
