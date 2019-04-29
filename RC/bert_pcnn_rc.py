@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-RC主函数
+bert + pcnn
 """
 import collections
 import os
@@ -14,7 +14,7 @@ from sklearn import metrics
 import tf_metrics
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
-from models import create_model, InputFeatures, InputExample
+from models import create_model_PCNN, InputFeatures, InputExample
 import argparse
 
 
@@ -561,7 +561,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total, eval_preds_total, average='macro')
                 eval_acc = metrics.accuracy_score(
                     eval_truth_total, eval_preds_total)
-                eval_loss_aver = eval_loss_total / 3200
+                eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估实体关系分类的指标
 
@@ -577,7 +577,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_acc <= best_eval_acc:
                     patience += 1
-                    if patience >= 50:
+                    if patience >= 20:
                         print("early stoping!")
                         return
 

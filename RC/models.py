@@ -122,6 +122,107 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, l
         return (loss, per_example_loss, logits, probabilities)
 
 
+def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_ids, labels, num_labels, pcnn_mask, positions=[]):
+    """
+    使用bert与pcnn结合进行关系分类
+    """
+    # PCNN所需要的组件
+    def word_position_embedding(bert_out, positions, position_dim=10):
+        """
+        bert 输出与 position embedding合并
+        pos1:主体的位置
+        pos2:客体的位置
+        """
+        pos1_head, pos1_tail, pos2_head, pos2_tail = positions
+        with tf.variable_scope('position_embedding'):
+            max_len = bert_out.shape[1].value
+            print(max_len)
+            pos_tot = max_len * 2  # 因为position可以为正负，所以要乘2
+            pos1_head_embedding = tf.get_variable('pos_1_head', shape=[pos_tot, position_dim],
+                                                  dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
+            pos1_tail_embedding = tf.get_variable('pos_1_tail', shape=[pos_tot, position_dim],
+                                                  dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
+            pos2_head_embedding = tf.get_variable('pos_2_head', shape=[pos_tot, position_dim],
+                                                  dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
+            pos1_head_embedding = tf.get_variable('pos_1', shape=[pos_tot, position_dim],
+                                                  dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
+            input_pos1_head = tf.nn.embedding_lookup(
+                pos1_head_embedding, pos1_head)
+            input_pos1_tail = tf.nn.embedding_lookup(
+                pos1_tail_embedding, pos1_tail)
+            input_pos2_head = tf.nn.embedding_lookup(
+                pos2_head_embedding, pos2_head)
+            input_pos2_tail = tf.nn.embedding_lookup(
+                pos2_tail_embedding, pos2_tail)
+            position_embedding = tf.concat(
+                [input_pos1_head, input_pos1_tail, input_pos2_head, input_pos2_tail], -1)
+        return tf.concat([bert_out, position_embedding], -1)
+
+    def __cnn_cell__(x, hidden_size, kernel_size, stride_size=1):
+        x = tf.layers.conv1d(inputs=x,
+                             filters=hidden_size,
+                             kernel_size=kernel_size,
+                             strides=stride_size,
+                             padding='same',
+                             kernel_initializer=tf.contrib.layers.xavier_initializer())
+        return x
+
+    def __piecewise_pooling__(x, mask):
+        mask_embedding = tf.constant(
+            [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+        # mask表示三个通道，分别表示p1前，p1和p2之间，p2后，全0的表示填充部分
+        mask = tf.nn.embedding_lookup(mask_embedding, mask)
+        hidden_size = x.shape[-1].value
+        x = tf.reduce_max(tf.expand_dims(mask * 100, 2) +
+                          tf.expand_dims(x, 3), axis=1) - 100
+        return tf.reshape(x, [-1, hidden_size * 3])
+
+    def pcnn(x, mask, is_training, hidden_size=256, kernel_size=3, stride_size=1, activation=tf.nn.relu, keep_prob=0.9):
+        with tf.variable_scope("pcnn"):
+            max_length = x.shape[1]
+            x = __cnn_cell__(x, hidden_size, kernel_size, stride_size)
+            x = __piecewise_pooling__(x, mask)
+            x = activation(x)
+            return x
+
+    # 首先使用bert的输出作为embedding
+    model = modeling.BertModel(
+        config=bert_config,
+        is_training=is_training,
+        input_ids=input_ids,
+        input_mask=input_mask,
+        token_type_ids=segment_ids,
+    )
+    bert_out = model.get_sequence_output()
+
+    # PCNN 流程
+    pcnn_input = word_position_embedding(bert_out, positions)
+    pcnn_output = pcnn(pcnn_input, pcnn_mask, is_training)
+
+    # 输出
+    hidden_size = pcnn_output.shape[-1].value
+    output_weights = tf.get_variable(
+        "output_weights", [num_labels, hidden_size],
+        initializer=tf.truncated_normal_initializer(stddev=0.02))
+    output_bias = tf.get_variable(
+        "output_bias", [num_labels], initializer=tf.zeros_initializer())
+
+    with tf.variable_scope("loss"):
+        if is_training:
+            # I.e., 0.1 dropout
+            pcnn_output = tf.nn.dropout(pcnn_output, keep_prob=0.9)
+
+        logits = tf.matmul(pcnn_output, output_weights, transpose_b=True)
+        logits = tf.nn.bias_add(logits, output_bias)
+        probabilities = tf.nn.softmax(logits, axis=-1)
+        log_probs = tf.nn.log_softmax(logits, axis=-1)
+        one_hot_labels = tf.one_hot(labels, depth=num_labels, dtype=tf.float32)
+        per_example_loss = -tf.reduce_sum(one_hot_labels * log_probs, axis=-1)
+        loss = tf.reduce_mean(per_example_loss)
+
+        return (loss, per_example_loss, logits, probabilities)
+
+
 def decode_labels(labels, batch_size):
     new_labels = []
     for row in range(batch_size):
