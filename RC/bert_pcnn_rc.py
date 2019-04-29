@@ -369,6 +369,8 @@ def filed_based_convert_examples_to_features(
         features["input_mask"] = create_int_feature(feature.input_mask)
         features["segment_ids"] = create_int_feature(feature.segment_ids)
         features["label_ids"] = create_int_feature([feature.label_id])
+        features["position_ids"] = create_int_feature(feature.position_ids)
+        features["pcnn_masks"] = create_int_feature(feature.pcnn_masks)
         # tf.train.Example/Feature 是一种协议，方便序列化？？？
         tf_example = tf.train.Example(
             features=tf.train.Features(feature=features))
@@ -382,6 +384,8 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "label_ids": tf.FixedLenFeature([], tf.int64),
+        "position_ids": tf.FixedLenFeature([seq_length, 4], tf.int64),
+        "pcnn_masks": tf.FixedLenFeature([seq_length], tf.int64)
     }
 
     def _decode_record(record, name_to_features):
@@ -516,11 +520,16 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
             shape=[None], dtype=tf.int32, name='label_ids')
+        position_ids= tf.placeholder(
+            shape=[None, args.max_seq_length, 4], dtype=tf.int32, name='position_ids')
+        pcnn_masks = = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='pcnn_masks')
+
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-        total_loss, per_example_loss, logits, probabilities = create_model(
-            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list))
+        total_loss, per_example_loss, logits, probabilities = create_model_PCNN(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list), position_ids, pcnn_masks)
         pred_ids = tf.argmax(probabilities, axis=-1,
                              output_type=tf.int32, name="pred_ids")
 
@@ -560,7 +569,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             train_batch = sess.run(train_iter)
             loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
-                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids'], 
+                position_ids: train_batch['position_ids', pcnn_masks: train_batch['pcnn_masks']]})
 
             if go % args.save_summary_steps == 0:
                 # 训练log
@@ -584,7 +594,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_batch = sess.run(eval_iter)
                     eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
                         input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'], 
+                        position_ids: eval_batch['position_ids'], pcnn_masks: eval_batch['pcnn_masks']})
                     # 统计结果
                     eval_loss_total += eval_loss
                     eval_preds_total = np.concatenate(

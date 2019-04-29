@@ -122,7 +122,7 @@ def create_model(bert_config, is_training, input_ids, input_mask, segment_ids, l
         return (loss, per_example_loss, logits, probabilities)
 
 
-def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_ids, labels, num_labels, pcnn_mask, positions=[]):
+def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_ids, labels, num_labels, positions, pcnn_mask):
     """
     使用bert与pcnn结合进行关系分类
     """
@@ -133,7 +133,9 @@ def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_i
         pos1:主体的位置
         pos2:客体的位置
         """
-        pos1_head, pos1_tail, pos2_head, pos2_tail = positions
+        pos1_head, pos1_tail, pos2_head, pos2_tail = \
+            positions[:, :, 0], positions[:, :, 1], \
+            positions[:, :, 2], positions[:, :, 3]
         with tf.variable_scope('position_embedding'):
             max_len = bert_out.shape[1].value
             print(max_len)
