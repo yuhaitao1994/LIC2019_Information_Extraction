@@ -32,15 +32,16 @@ def load_predict_result(predict_filename):
     """Loads the file to be predicted"""
     predict_result = {}
     ret_code = SUCCESS
-    try:
-        predict_file_zip = zipfile.ZipFile(predict_filename)
-    except:
-        ret_code = FILE_ERROR
-        return predict_result, ret_code
-    for predict_file in predict_file_zip.namelist():
-        for line in predict_file_zip.open(predict_file):
+    # try:
+    #     predict_file_zip = zipfile.ZipFile(predict_filename)
+    # except:
+    #     ret_code = FILE_ERROR
+    #     return predict_result, ret_code
+    # for predict_file in predict_file_zip.namelist():
+    with open(predict_filename) as f:
+        for line in f:
             try:
-                line = line.decode('utf8').strip()
+                line = line.strip()
             except:
                 ret_code = ENCODING_ERROR
                 return predict_result, ret_code
@@ -315,6 +316,6 @@ if __name__ == '__main__':
                 args.eng_label_dic_file, args.result_dir, has_type_dic=True)
 
     # # 计算F1
-    ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.zip'),
+    ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.json'),
                        '', '', os.path.join(args.golden_dir, 'dev_data.json'))
     print(json.dumps(ret_info))
