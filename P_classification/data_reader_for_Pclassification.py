@@ -22,15 +22,11 @@ class MyDataReader(object):
                  postag_dict_path,
                  label_dict_path,
                  train_data_list_path='',
-                 dev_data_list_path='',
-                 train_ner_file='',
-                 dev_ner_file=''):
+                 dev_data_list_path=''):
         self._postag_dict_path = postag_dict_path
         self._label_dict_path = label_dict_path
         self.train_data_list_path = train_data_list_path
         self.dev_data_list_path = dev_data_list_path
-        self.train_ner_file = train_ner_file
-        self.dev_ner_file = dev_ner_file
         self._p_map_eng_dict = {}
         # load dictionary
         self._dict_path_dict = {'postag_dict': self._postag_dict_path,
