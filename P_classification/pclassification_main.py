@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-bert + pcnn
+RC主函数
 """
 import collections
 import os
@@ -13,7 +13,7 @@ from sklearn import metrics
 
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
-from models import create_model_PCNN, InputExample
+from models import create_model, InputFeatures, InputExample
 import argparse
 
 
@@ -121,7 +121,7 @@ class DataProcessor(object):
                     continue
                 data.append(context[3])
                 data.append(context[0])
-                data.append(context[1] + '&&' + context[2])
+                data.append(context[1] + '&' + context[2])
                 lines.append(data)
             return lines
 
@@ -174,16 +174,21 @@ class RCProcessor(DataProcessor):
         return examples
 
 
-class InputFeatures(object):
-    """A single set of features of data."""
+def _truncate_seq_pair(tokens_a, tokens_b, max_length):
+    """Truncates a sequence pair in place to the maximum length."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, label_id, position_ids, pcnn_masks, ):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_id = label_id
-        self.position_ids = position_ids
-        self.pcnn_masks = pcnn_masks
+    # This is a simple heuristic which will always truncate the longer sequence
+    # one token at a time. This makes more sense than truncating an equal percent
+    # of tokens from each, since if one sequence is very short then each token
+    # that's truncated likely contains more information than a longer sequence.
+    while True:
+        total_length = len(tokens_a) + len(tokens_b)
+        if total_length <= max_length:
+            break
+        if len(tokens_a) > len(tokens_b):
+            tokens_a.pop()
+        else:
+            tokens_b.pop()
 
 
 def convert_single_example(ex_index, example, label_list, max_seq_length, tokenizer):
@@ -204,13 +209,37 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
 
     tokens_a = tokenizer.tokenize(example.text_a)
     tokens_b = None
-    # if example.text_b:
-    #     tokens_b = tokenizer.tokenize(example.text_b)
+    if example.text_b:
+        tokens_b = tokenizer.tokenize(example.text_b)
 
-    # Account for [CLS] and [SEP] with "- 2"
-    if len(tokens_a) > max_seq_length - 2:
-        tokens_a = tokens_a[0:(max_seq_length - 2)]
+    if tokens_b:
+        # Modifies `tokens_a` and `tokens_b` in place so that the total
+        # length is less than the specified length.
+        # Account for [CLS], [SEP], [SEP] with "- 3"
+        _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 3)
+    else:
+        # Account for [CLS] and [SEP] with "- 2"
+        if len(tokens_a) > max_seq_length - 2:
+            tokens_a = tokens_a[0:(max_seq_length - 2)]
 
+    # The convention in BERT is:
+    # (a) For sequence pairs:
+    #  tokens:   [CLS] is this jack ##son ##ville ? [SEP] no it is not . [SEP]
+    #  type_ids: 0     0  0    0    0     0       0 0     1  1  1  1   1 1
+    # (b) For single sequences:
+    #  tokens:   [CLS] the dog is hairy . [SEP]
+    #  type_ids: 0     0   0   0  0     0 0
+    #
+    # Where "type_ids" are used to indicate whether this is the first
+    # sequence or the second sequence. The embedding vectors for `type=0` and
+    # `type=1` were learned during pre-training and are added to the wordpiece
+    # embedding vector (and position vector). This is not *strictly* necessary
+    # since the [SEP] token unambiguously separates the sequences, but it makes
+    # it easier for the model to learn the concept of sequences.
+    #
+    # For classification tasks, the first vector (corresponding to [CLS]) is
+    # used as the "sentence vector". Note that this only makes sense because
+    # the entire model is fine-tuned.
     tokens = []
     segment_ids = []
     tokens.append("[CLS]")
@@ -221,91 +250,15 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     tokens.append("[SEP]")
     segment_ids.append(0)
 
-    # 找到pos1_head, pos1_tail, pos2_tag, pos2_tail这四个点的位置，做position embedding
-    sub, obj = example.text_b.split('&&')
-    sub = tokenizer.tokenize(sub)
-    obj = tokenizer.tokenize(obj)
-
-    pos1_head = -1
-    pos1_tail = -1
-    pos2_head = -1
-    pos2_tail = -1
-    for i in range(len(tokens) - 1):
-        cut = tokens[i:min(i + len(sub), len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(sub).split('##')):
-            pos1_head = i
-            pos1_tail = i + len(cut) - 1
-            break
-        cut = tokens[i:min(i + len(sub) - 1, len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(sub).split('##')):
-            pos1_head = i
-            pos1_tail = i + len(cut) - 1
-            break
-        cut = tokens[i:min(i + len(sub) + 1, len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(sub).split('##')):
-            pos1_head = i
-            pos1_tail = i + len(cut) - 1
-            break
-    if pos1_head == -1:
-        pos1_head = pos1_tail = len(tokens) - 1
-        # print(tokens)
-        # print(sub)
-        # raise ValueError
-
-    for i in range(len(tokens) - 1):
-        cut = tokens[i:min(i + len(obj), len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(obj).split('##')):
-            pos2_head = i
-            pos2_tail = i + len(cut) - 1
-            break
-        cut = tokens[i:min(i + len(obj) - 1, len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(obj).split('##')):
-            pos2_head = i
-            pos2_tail = i + len(cut) - 1
-            break
-        cut = tokens[i:min(i + len(obj) + 1, len(tokens) - 1)]
-        if ''.join(''.join(cut).split('##')) == ''.join(''.join(obj).split('##')):
-            pos2_head = i
-            pos2_tail = i + len(cut) - 1
-            break
-    if pos2_head == -1:
-        pos2_head = pos2_tail = len(tokens) - 1
-        # print(tokens)
-        # print(obj)
-        # raise ValueError
-
-    # 写入position和pcnn的mask
-    position_ids = np.zeros([max_seq_length, 4], dtype=np.int32)
-    pcnn_masks = []
-
-    pos_min_h = 0
-    pos_min_t = 0
-    pos_max_h = 0
-    pos_max_t = 0
-    if pos1_head < pos2_head:
-        pos_min_h = pos1_head
-        pos_min_t = pos1_tail
-        pos_max_h = pos2_head
-        pos_max_t = pos2_tail
-    else:
-        pos_min_h = pos2_head
-        pos_min_t = pos2_tail
-        pos_max_h = pos1_head
-        pos_max_t = pos1_tail
-
-    for i in range(len(tokens)):
-        position_ids[i] = np.array(
-            [i - pos1_head, i - pos1_tail, i - pos2_head, i - pos2_tail])
-        if i < pos_min_h:
-            pcnn_masks.append(1)
-        elif i <= pos_min_t:
-            pcnn_masks.append(0)
-        elif i < pos_max_h:
-            pcnn_masks.append(2)
-        elif i <= pos_max_t:
-            pcnn_masks.append(0)
-        else:
-            pcnn_masks.append(3)
+    if tokens_b:
+        for token in tokens_b:
+            if token == '&':
+                tokens.append("[unused1]")  # 两个实体之间用一个特殊字符隔开
+            else:
+                tokens.append(token)
+            segment_ids.append(1)
+        tokens.append("[SEP]")
+        segment_ids.append(1)
 
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
@@ -314,21 +267,14 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     input_mask = [1] * len(input_ids)
 
     # Zero-pad up to the sequence length.
-    i = len(tokens)
     while len(input_ids) < max_seq_length:
         input_ids.append(0)
         input_mask.append(0)
         segment_ids.append(0)
-        position_ids[i] = np.array(
-            [i - pos1_head, i - pos1_tail, i - pos2_head, i - pos2_tail])
-        pcnn_masks.append(0)
-        i += 1
 
     assert len(input_ids) == max_seq_length
     assert len(input_mask) == max_seq_length
     assert len(segment_ids) == max_seq_length
-    assert len(position_ids) == max_seq_length
-    assert len(pcnn_masks) == max_seq_length
 
     label_id = label_map[example.label]
     if ex_index < 5:
@@ -342,19 +288,13 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
                         " ".join([str(x) for x in input_mask]))
         tf.logging.info("segment_ids: %s" %
                         " ".join([str(x) for x in segment_ids]))
-        tf.logging.info("position_ids: %s" %
-                        " ".join([str(x) for x in position_ids]))
-        tf.logging.info("pcnn_masks: %s" %
-                        " ".join([str(x) for x in pcnn_masks]))
         tf.logging.info("label: %s (id = %d)" % (example.label, label_id))
 
     feature = InputFeatures(
         input_ids=input_ids,
         input_mask=input_mask,
         segment_ids=segment_ids,
-        label_id=label_id,
-        position_ids=position_ids,
-        pcnn_masks=pcnn_masks)
+        label_id=label_id)
     return feature
 
 
@@ -390,9 +330,6 @@ def filed_based_convert_examples_to_features(
         features["input_mask"] = create_int_feature(feature.input_mask)
         features["segment_ids"] = create_int_feature(feature.segment_ids)
         features["label_ids"] = create_int_feature([feature.label_id])
-        features["position_ids"] = tf.train.Feature(
-            bytes_list=tf.train.BytesList(value=[feature.position_ids.tostring()]))
-        features["pcnn_masks"] = create_int_feature(feature.pcnn_masks)
         # tf.train.Example/Feature 是一种协议，方便序列化？？？
         tf_example = tf.train.Example(
             features=tf.train.Features(feature=features))
@@ -406,8 +343,6 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "label_ids": tf.FixedLenFeature([], tf.int64),
-        "position_ids": tf.FixedLenFeature([], tf.string),
-        "pcnn_masks": tf.FixedLenFeature([seq_length], tf.int64)
     }
 
     def _decode_record(record, name_to_features):
@@ -416,9 +351,6 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
             t = example[name]
             if t.dtype == tf.int64:
                 t = tf.to_int32(t)
-            else:
-                t = tf.reshape(tf.decode_raw(t, tf.int32),
-                               [-1, 4])  # position embedding
             example[name] = t
         return example
 
@@ -545,16 +477,11 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
             shape=[None], dtype=tf.int32, name='label_ids')
-        position_ids = tf.placeholder(
-            shape=[None, args.max_seq_length, 4], dtype=tf.int32, name='position_ids')
-        pcnn_masks = tf.placeholder(
-            shape=[None, args.max_seq_length], dtype=tf.int32, name='pcnn_masks')
-
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-        total_loss, per_example_loss, logits, probabilities = create_model_PCNN(
-            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list), position_ids, pcnn_masks)
+        total_loss, per_example_loss, logits, probabilities = create_model(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list))
         pred_ids = tf.argmax(probabilities, axis=-1,
                              output_type=tf.int32, name="pred_ids")
 
@@ -594,8 +521,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             train_batch = sess.run(train_iter)
             loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
-                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids'],
-                position_ids: train_batch['position_ids'], pcnn_masks: train_batch['pcnn_masks']})
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
 
             if go % args.save_summary_steps == 0:
                 # 训练log
@@ -619,8 +545,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_batch = sess.run(eval_iter)
                     eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
                         input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
-                        position_ids: eval_batch['position_ids'], pcnn_masks: eval_batch['pcnn_masks']})
+                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
                     # 统计结果
                     eval_loss_total += eval_loss
                     eval_preds_total = np.concatenate(
@@ -635,7 +560,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total, eval_preds_total, average='macro')
                 eval_acc = metrics.accuracy_score(
                     eval_truth_total, eval_preds_total)
-                eval_loss_aver = eval_loss_total / 1000
+                eval_loss_aver = eval_loss_total / 3200
 
                 # 评估实体关系分类的指标
 
@@ -651,7 +576,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_acc <= best_eval_acc:
                     patience += 1
-                    if patience >= 100:
+                    if patience >= 50:
                         print("early stoping!")
                         return
 
@@ -708,9 +633,6 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
         segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
         label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
-        position_ids = tf.get_default_graph().get_tensor_by_name('position_ids:0')
-        pcnn_masks = tf.get_default_graph().get_tensor_by_name('pcnn_masks:0')
-
         sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
             'is_training:0'), tf.constant(False, dtype=tf.bool)))
         # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
@@ -723,8 +645,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             predict_batch = sess.run(predict_iter)
             predict_res = sess.run(pred_ids, feed_dict={
                 input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
-                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids'],
-                position_ids: predict_batch['position_ids'], pcnn_masks: predict_batch['pcnn_masks']})
+                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids']})
             predict_total = np.concatenate((predict_total, predict_res))
         # 处理评估结果，计算recall与f1
         predict_total = predict_total[1:]
@@ -741,8 +662,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             eval_batch = sess.run(eval_iter)
             eval_res = sess.run(pred_ids, feed_dict={
                 input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
-                position_ids: eval_batch['position_ids'], pcnn_masks: eval_batch['pcnn_masks']})
+                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
             eval_total = np.concatenate((eval_total, eval_res))
         # 处理评估结果，计算recall与f1
         eval_total = eval_total[1:]
