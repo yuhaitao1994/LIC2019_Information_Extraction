@@ -464,7 +464,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     train_iter = train_data.make_one_shot_iterator().get_next()
     # 因为eval集比较大，所以shuffle选取一部分作为评估
-    eval_data = eval_data.shuffle()
+    eval_data = eval_data.shuffle(buffer_size=10000)
 
     # 开启计算图
     with tf.Session(config=sess_config) as sess:
