@@ -32,6 +32,9 @@ class MyDataReader(object):
         self.train_ner_file = train_ner_file
         self.dev_ner_file = dev_ner_file
         self._p_map_eng_dict = {}
+
+        # 统计各种类别数据数量的词典
+        self.label_num_dic = {}
         # load dictionary
         self._dict_path_dict = {'postag_dict': self._postag_dict_path,
                                 'label_dict': self._label_dict_path}
@@ -71,10 +74,11 @@ class MyDataReader(object):
                 label_to_eng[p] = p_eng
                 label_dict[p_eng] = idx
                 self._p_map_eng_dict[p] = p_eng
-                if p != '木有关系':
-                    label_to_eng['反_' + p] = 'RE_' + p_eng
-                    label_dict['RE_' + p_eng] = idx + 51
-                    self._p_map_eng_dict['反_' + p] = 'RE_' + p_eng
+                self.label_num_dic[p] = 0
+                # if p != '木有关系':
+                #     label_to_eng['反_' + p] = 'RE_' + p_eng
+                #     label_dict['RE_' + p_eng] = idx + 51
+                #     self._p_map_eng_dict['反_' + p] = 'RE_' + p_eng
         return label_dict, label_to_eng
 
     def _load_dict_from_file(self, dict_name, bias=0):
@@ -137,7 +141,7 @@ class MyDataReader(object):
             训练集完全使用真实体作为positive，postag中的作为假实体negative
             """
             real_entity = []
-            fake_entity = []
+            fake_entity = set()
             # 生成positive sample
             i = 0
             for spo in dic['spo_list']:
@@ -147,9 +151,10 @@ class MyDataReader(object):
                 real_entity.append(obj)
                 sample_list.append(
                     sentence + '\t' + sub + '\t' + obj + '\t' + label_dict[spo['predicate']])
-                if i % 2 == 0:
-                    sample_list.append(
-                        sentence + '\t' + obj + '\t' + sub + '\t' + label_dict['反_' + spo['predicate']])
+                self.label_num_dic[spo['predicate']] += 1
+                # if i % 2 == 0:
+                #     sample_list.append(
+                #         sentence + '\t' + obj + '\t' + sub + '\t' + label_dict[spo['predicate']])
                 i += 1
             # 生成Negative sample
             # 统计假实体, 使用postag中的, 全英文假实体不要
@@ -160,8 +165,9 @@ class MyDataReader(object):
                         if (item['word'] in r_e) or (r_e in item['word']):
                             flag = 1
                             break
-                    if flag == 0 and item['word'].encode('utf-8').isalpha == False:
-                        fake_entity.append(item['word'])
+                    if flag == 0:
+                        # if item['word'].encode('utf-8').isalpha == False:
+                        fake_entity.add(item['word'])
                     else:
                         continue
 
@@ -188,9 +194,10 @@ class MyDataReader(object):
                     if i % 2 == 0:
                         sample_list.append(
                             sentence + '\t' + f_e + '\t' + real_entity[0] + '\t' + label_dict['木有关系'])
-                    else:
-                        sample_list.append(
-                            sentence + '\t' + fake_entity[random.randint(0, i)] + '\t' + f_e + '\t' + label_dict['木有关系'])
+                    # else:
+                    #     sample_list.append(
+                    #         sentence + '\t' + fake_entity[random.randint(0, i)] + '\t' + f_e + '\t' + label_dict['木有关系'])
+                    self.label_num_dic['木有关系'] += 1
                     i += 1
                     if i > int(len(fake_entity) / 2):
                         break
@@ -221,35 +228,29 @@ class MyDataReader(object):
                         break
 
             if mode == 'dev':
-                for i in range(len(entity)):
-                    for j in range(len(entity)):
-                        if i == j:
-                            continue
-                        else:
-                            flag = 0
-                            for spo in dic['spo_list']:
-                                if spo['subject'] in entity[i] and spo['object'] in entity[j]:
-                                    sample_list.append(
-                                        sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
-                                    flag = 1
-                                    break
-                                elif spo['subject'] in entity[j] and spo['object'] in entity[i]:
-                                    sample_list.append(
-                                        sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['反_' + spo['predicate']])
-                                    flag = 1
-                                    break
-                            if flag == 0:
+                for i in range(len(entity) - 1):
+                    for j in range(i + 1, len(entity)):
+                        flag = 0
+                        for spo in dic['spo_list']:
+                            if spo['subject'] in entity[i] and spo['object'] in entity[j]:
                                 sample_list.append(
-                                    sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['木有关系'])
-
-            elif mode == 'test':
-                for i in range(len(entity)):
-                    for j in range(len(entity)):
-                        if i == j:
-                            continue
-                        else:
+                                    sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
+                                flag = 1
+                                break
+                            elif spo['subject'] in entity[j] and spo['object'] in entity[i]:
+                                sample_list.append(
+                                    sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict[spo['predicate']])
+                                flag = 1
+                                break
+                        if flag == 0:
                             sample_list.append(
                                 sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['木有关系'])
+
+            elif mode == 'test':
+                for i in range(len(entity) - 1):
+                    for j in range(i + 1, len(entity)):
+                        sample_list.append(
+                            sentence + '\t' + entity[i] + '\t' + entity[j] + '\t' + label_dict['木有关系'])
 
         return sample_list
 
@@ -362,3 +363,6 @@ if __name__ == '__main__':
         for sample_list in tqdm(test()):
             for sample in sample_list:
                 f.write(sample + '\n')
+
+    for key, value in data_generator.label_num_dic.items():
+        print(key, value)

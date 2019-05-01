@@ -153,8 +153,6 @@ class RCProcessor(DataProcessor):
                     with codecs.open(labels, 'r', encoding='utf-8') as fd:
                         for line in fd:
                             self.labels.append(line.strip().split()[-1])
-                    for i in range(len(self.labels) - 1):
-                        self.labels.append('RE_' + self.labels[i])
                 else:
                     # 否则通过传入的参数，按照逗号分割
                     self.labels = labels.split(',')
@@ -465,6 +463,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     train_iter = train_data.make_one_shot_iterator().get_next()
+    # 因为eval集比较大，所以shuffle选取一部分作为评估
+    eval_data = eval_data.shuffle()
 
     # 开启计算图
     with tf.Session(config=sess_config) as sess:
@@ -560,7 +560,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total, eval_preds_total, average='macro')
                 eval_acc = metrics.accuracy_score(
                     eval_truth_total, eval_preds_total)
-                eval_loss_aver = eval_loss_total / 3200
+                eval_loss_aver = eval_loss_total / 1000
 
                 # 评估实体关系分类的指标
 
@@ -576,7 +576,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_acc <= best_eval_acc:
                     patience += 1
-                    if patience >= 50:
+                    if patience >= 100:
                         print("early stoping!")
                         return
 
@@ -724,7 +724,7 @@ if __name__ == '__main__':
     # 创建ner dataprocessor对象
     processor = processors[args.rc](args.output_dir)
     label_list = processor.get_labels(labels=args.label_list)
-    print(label_list)
+    print(len(label_list))
 
     tokenizer = tokenization.FullTokenizer(
         vocab_file=args.vocab_file, do_lower_case=args.do_lower_case)
