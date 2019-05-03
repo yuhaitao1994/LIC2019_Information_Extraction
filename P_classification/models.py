@@ -224,6 +224,46 @@ def create_model_PCNN(bert_config, is_training, input_ids, input_mask, segment_i
         return (loss, per_example_loss, logits, probabilities)
 
 
+def create_model_Pclassification(bert_config, is_training, input_ids, input_mask, segment_ids, labels):
+    """
+    构造p分类模型
+    """
+    # 通过传入的训练数据，进行representation
+    model = modeling.BertModel(
+        config=bert_config,
+        is_training=is_training,
+        input_ids=input_ids,
+        input_mask=input_mask,
+        token_type_ids=segment_ids,
+    )
+    output_layer = model.get_pooled_output()
+
+    hidden_size = output_layer.shape[-1].value
+
+    output_weights = tf.get_variable(
+        "output_weights", [50, hidden_size],
+        initializer=tf.truncated_normal_initializer(stddev=0.02))
+
+    output_bias = tf.get_variable(
+        "output_bias", [50], initializer=tf.zeros_initializer())
+
+    with tf.variable_scope("loss"):
+        if is_training:
+            # I.e., 0.1 dropout
+            output_layer = tf.nn.dropout(output_layer, keep_prob=0.9)
+
+        logits = tf.matmul(output_layer, output_weights, transpose_b=True)
+        logits = tf.nn.bias_add(logits, output_bias)
+
+        # 多标签分类使用sigmoid
+        probabilities = tf.nn.sigmoid(logits)
+        per_example_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=logits, labels=tf.cast(labels, tf.float32))
+        loss = tf.reduce_mean(per_example_loss)
+
+        return (loss, per_example_loss, logits, probabilities)
+
+
 def decode_labels(labels, batch_size):
     new_labels = []
     for row in range(batch_size):

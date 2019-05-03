@@ -13,7 +13,7 @@ from sklearn import metrics
 
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
-from models import create_model, InputFeatures, InputExample
+from models import create_model_Pclassification, InputFeatures, InputExample
 import argparse
 
 
@@ -33,7 +33,7 @@ def get_args_parser():
 
     parser.add_argument('-experiment_name', type=str, default='1',
                         help='name')
-    parser.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'RC_data'),
+    parser.add_argument('-data_dir', type=str, default=os.path.join(root_path, 'PC_data'),
                         help='train, dev and test data dir')
     parser.add_argument('-bert_config_file', type=str,
                         default=os.path.join(bert_path, 'bert_config.json'))
@@ -88,7 +88,7 @@ def get_args_parser():
 
     parser.add_argument('-verbose', action='store_true', default=False,
                         help='turn on tensorflow logging for debug')
-    parser.add_argument('-rc', type=str, default='RC',
+    parser.add_argument('-pc', type=str, default='PC',
                         help='which modle to train')
 
     return parser.parse_args()
@@ -117,16 +117,15 @@ class DataProcessor(object):
             for line in f:
                 data = []
                 context = line.strip().split('\t')
-                if len(context) != 4:
+                if len(context) <= 1:
                     continue
-                data.append(context[3])
                 data.append(context[0])
-                data.append(context[1] + '&' + context[2])
+                data.append(' '.join(context[1:]))
                 lines.append(data)
             return lines
 
 
-class RCProcessor(DataProcessor):
+class PCProcessor(DataProcessor):
     def __init__(self, output_dir):
         self.labels = list()
         self.output_dir = output_dir
@@ -153,8 +152,7 @@ class RCProcessor(DataProcessor):
                     with codecs.open(labels, 'r', encoding='utf-8') as fd:
                         for line in fd:
                             self.labels.append(line.strip().split()[-1])
-                    for i in range(len(self.labels) - 1):
-                        self.labels.append('RE_' + self.labels[i])
+                    self.labels = self.labels[:50]
                 else:
                     # 否则通过传入的参数，按照逗号分割
                     self.labels = labels.split(',')
@@ -166,11 +164,14 @@ class RCProcessor(DataProcessor):
         examples = []
         for (i, line) in enumerate(lines):
             guid = "%s-%s" % (set_type, i)
-            text_a = tokenization.convert_to_unicode(line[1])
-            text_b = tokenization.convert_to_unicode(line[2])
-            label = tokenization.convert_to_unicode(line[0])
+            text_a = tokenization.convert_to_unicode(line[0])
+            # 多标签分类的label
+            label = np.zeros(shape=[50], dtype=np.int32)
+            l_list = line[1].strip().split(' ')
+            for l in l_list:
+                label[self.labels.index(l)] = 1
             examples.append(InputExample(
-                guid=guid, text_a=text_a, text_b=text_b, label=label))
+                guid=guid, text_a=text_a, text_b=None, label=label))
         return examples
 
 
@@ -203,10 +204,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     :param mode:
     :return:
     """
-    label_map = {}
-    for (i, label) in enumerate(label_list):
-        label_map[label] = i
-
+    label_ids = list(example.label)
     tokens_a = tokenizer.tokenize(example.text_a)
     tokens_b = None
     if example.text_b:
@@ -250,16 +248,6 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     tokens.append("[SEP]")
     segment_ids.append(0)
 
-    if tokens_b:
-        for token in tokens_b:
-            if token == '&':
-                tokens.append("[unused1]")  # 两个实体之间用一个特殊字符隔开
-            else:
-                tokens.append(token)
-            segment_ids.append(1)
-        tokens.append("[SEP]")
-        segment_ids.append(1)
-
     input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
@@ -276,7 +264,6 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
     assert len(input_mask) == max_seq_length
     assert len(segment_ids) == max_seq_length
 
-    label_id = label_map[example.label]
     if ex_index < 5:
         tf.logging.info("*** Example ***")
         tf.logging.info("guid: %s" % (example.guid))
@@ -288,13 +275,14 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
                         " ".join([str(x) for x in input_mask]))
         tf.logging.info("segment_ids: %s" %
                         " ".join([str(x) for x in segment_ids]))
-        tf.logging.info("label: %s (id = %d)" % (example.label, label_id))
+        tf.logging.info("label: %s" %
+                        " ".join([str(x) for x in label_ids]))
 
     feature = InputFeatures(
         input_ids=input_ids,
         input_mask=input_mask,
         segment_ids=segment_ids,
-        label_id=label_id)
+        label_id=label_ids)
     return feature
 
 
@@ -329,7 +317,7 @@ def filed_based_convert_examples_to_features(
         features["input_ids"] = create_int_feature(feature.input_ids)
         features["input_mask"] = create_int_feature(feature.input_mask)
         features["segment_ids"] = create_int_feature(feature.segment_ids)
-        features["label_ids"] = create_int_feature([feature.label_id])
+        features["label_ids"] = create_int_feature(feature.label_id)
         # tf.train.Example/Feature 是一种协议，方便序列化？？？
         tf_example = tf.train.Example(
             features=tf.train.Features(feature=features))
@@ -342,7 +330,7 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
         "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
-        "label_ids": tf.FixedLenFeature([], tf.int64),
+        "label_ids": tf.FixedLenFeature([50], tf.int64),
     }
 
     def _decode_record(record, name_to_features):
@@ -407,9 +395,13 @@ def adam_filter(model_path):
 def result_to_pair(label_list, writer, data_file, result):
     f = open(data_file, 'r')
     for line, prediction in zip(f, result):
-        line = line.strip()
-        label = label_list[prediction]
-        writer.write(line + '\t' + str(label) + '\n')
+        line = line.strip().split()[0]
+        labels = []
+        prediction = list(prediction)
+        for i in range(len(prediction)):
+            if prediction[i] == 1:
+                labels.append(label_list[i])
+        writer.write(line + '\t' + '\t'.join(labels) + '\n')
 
 
 def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
@@ -476,14 +468,14 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         segment_ids = tf.placeholder(
             shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
-            shape=[None], dtype=tf.int32, name='label_ids')
+            shape=[None, 50], dtype=tf.int32, name='label_ids')
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-        total_loss, per_example_loss, logits, probabilities = create_model(
-            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list))
-        pred_ids = tf.argmax(probabilities, axis=-1,
-                             output_type=tf.int32, name="pred_ids")
+        total_loss, per_example_loss, logits, probabilities = create_model_Pclassification(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids)
+        pred_ids = tf.cast(tf.cast(tf.less(0.5, probabilities),
+                                   tf.bool), tf.int32, name='pred_ids')
 
         # 优化器
         train_op = optimization.create_optimizer(
@@ -519,7 +511,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         for go in range(1, num_train_steps + 1):
             # feed
             train_batch = sess.run(train_iter)
-            loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
+            loss, preds, op = sess.run([total_loss, pred_ids, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
                 segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
 
@@ -533,8 +525,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 验证集评估
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
                 eval_loss_total = 0.0
-                eval_preds_total = np.array([0], dtype=np.int32)
-                eval_truth_total = np.array([0], dtype=np.int32)
+                eval_preds_total = np.array([[0] * 50], dtype=np.int32)
+                eval_truth_total = np.array([[0] * 50], dtype=np.int32)
                 # 重新生成一次验证集数据
                 eval_data = eval_data.repeat()
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
@@ -549,18 +541,18 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     # 统计结果
                     eval_loss_total += eval_loss
                     eval_preds_total = np.concatenate(
-                        (eval_preds_total, eval_preds))
+                        (eval_preds_total, eval_preds), axis=0)
                     eval_truth_total = np.concatenate(
-                        (eval_truth_total, eval_truth))
+                        (eval_truth_total, eval_truth), axis=0)
 
                 # 处理评估结果，计算recall与f1
                 eval_preds_total = eval_preds_total[1:]
                 eval_truth_total = eval_truth_total[1:]
                 eval_f1 = metrics.f1_score(
-                    eval_truth_total, eval_preds_total, average='macro')
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_acc = metrics.accuracy_score(
-                    eval_truth_total, eval_preds_total)
-                eval_loss_aver = eval_loss_total / 3200
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
+                eval_loss_aver = eval_loss_total / 1000
 
                 # 评估实体关系分类的指标
 
@@ -576,7 +568,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_acc <= best_eval_acc:
                     patience += 1
-                    if patience >= 50:
+                    if patience >= 5:
                         print("early stoping!")
                         return
 
@@ -639,14 +631,15 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         pred_ids = tf.get_default_graph().get_tensor_by_name('pred_ids:0')
 
         # test集预测
-        predict_total = np.array([0] * 128, dtype=np.int32)
+        predict_total = np.array([[0] * 50], dtype=np.int32)
         for _ in range(0, int(len(predict_examples) / args.batch_size) + 1):
             # predict feed
             predict_batch = sess.run(predict_iter)
             predict_res = sess.run(pred_ids, feed_dict={
                 input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
                 segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids']})
-            predict_total = np.concatenate((predict_total, predict_res))
+            predict_total = np.concatenate(
+                (predict_total, predict_res), axis=0)
         # 处理评估结果，计算recall与f1
         predict_total = predict_total[1:]
         output_predict_file = os.path.join(
@@ -656,14 +649,14 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
                 args.data_dir, 'test.txt'), predict_total)
 
         # eval集预测
-        eval_total = np.array([0], dtype=np.int32)
+        eval_total = np.array([[0] * 50], dtype=np.int32)
         for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
             # predict feed
             eval_batch = sess.run(eval_iter)
             eval_res = sess.run(pred_ids, feed_dict={
                 input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
                 segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
-            eval_total = np.concatenate((eval_total, eval_res))
+            eval_total = np.concatenate((eval_total, eval_res), axis=0)
         # 处理评估结果，计算recall与f1
         eval_total = eval_total[1:]
         output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
@@ -678,7 +671,7 @@ if __name__ == '__main__':
     """
     args = get_args_parser()
     args.output_dir = os.path.join(
-        args.output_dir, 'RC_model_' + args.experiment_name)
+        args.output_dir, 'PC_model_' + args.experiment_name)
     os.environ['CUDA_VISIBLE_DEVICES'] = args.device_map
     tf.logging.set_verbosity(tf.logging.INFO)
     if True:
@@ -688,7 +681,7 @@ if __name__ == '__main__':
               (' '.join(sys.argv), 'ARG', 'VALUE', '_' * 50, param_str))
 
     processors = {
-        "RC": RCProcessor
+        "PC": PCProcessor
     }
     bert_config = modeling.BertConfig.from_json_file(args.bert_config_file)
 
@@ -722,9 +715,9 @@ if __name__ == '__main__':
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
     # 创建ner dataprocessor对象
-    processor = processors[args.rc](args.output_dir)
+    processor = processors[args.pc](args.output_dir)
     label_list = processor.get_labels(labels=args.label_list)
-    print(label_list)
+    print(len(label_list))
 
     tokenizer = tokenization.FullTokenizer(
         vocab_file=args.vocab_file, do_lower_case=args.do_lower_case)

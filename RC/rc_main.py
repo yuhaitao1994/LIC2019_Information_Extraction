@@ -463,8 +463,6 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
     eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     train_iter = train_data.make_one_shot_iterator().get_next()
-    # 因为eval集比较大，所以shuffle选取一部分作为评估
-    eval_data = eval_data.shuffle(buffer_size=10000)
 
     # 开启计算图
     with tf.Session(config=sess_config) as sess:
@@ -519,7 +517,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         for go in range(1, num_train_steps + 1):
             # feed
             train_batch = sess.run(train_iter)
-            loss, preds, op = sess.run([total_loss, probabilities, train_op], feed_dict={
+            loss, preds, op = sess.run([total_loss, pred_ids, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
                 segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
 
