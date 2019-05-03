@@ -643,7 +643,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         # 处理评估结果，计算recall与f1
         predict_total = predict_total[1:]
         output_predict_file = os.path.join(
-            args.output_dir, "prediction_test.txt")
+            args.output_dir, "PC_test.txt")
         with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
             result_to_pair(label_list, writer, os.path.join(
                 args.data_dir, 'test.txt'), predict_total)
@@ -659,7 +659,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             eval_total = np.concatenate((eval_total, eval_res), axis=0)
         # 处理评估结果，计算recall与f1
         eval_total = eval_total[1:]
-        output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
+        output_eval_file = os.path.join(args.output_dir, "PC_dev.txt")
         with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
             result_to_pair(label_list, writer, os.path.join(
                 args.data_dir, 'dev.txt'), eval_total)
