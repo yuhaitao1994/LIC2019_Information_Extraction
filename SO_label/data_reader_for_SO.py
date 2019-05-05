@@ -147,12 +147,25 @@ class MyDataReader(object):
                 raise ValueError
             if len(item) == 1:
                 return sample_list
+            # 验证集
             if mode == 'dev':
                 for label_eng in item[1:]:
-                    label_cns = eng_dict[label_eng]
                     for spo in dic['spo_list']:
-
+                        if label_dict[spo['predicate']] == label_eng:
+                            sample = sentence_ori
+                            sample += ('\t' + label_eng)
+                            sample += ('\t' + spo['subject'])
+                            sample += ('\t' + spo['object'])
+                            sample_list.append(sample)
+                            break
+            # 测试集
             elif mode == 'test':
+                for label_eng in item[1:]:
+                    sample = sentence_ori
+                    sample += ('\t' + label_eng)
+                    sample += ('\t' + '主体')
+                    sample += ('\t' + '客体')
+                    sample_list.append(sample)
 
         return sample_list
 
@@ -165,8 +178,8 @@ class MyDataReader(object):
             if mode == "train":
                 f = open(data_path.strip())
                 for line in f:
-                    sample_list = self._get_feed_iterator(line.strip(), label_dict=self.label_eng_dict,
-                                                          eng_dict=self._reverse_dict['eng_map_p_dict'], None, mode=mode)
+                    sample_list = self._get_feed_iterator(line.strip(
+                    ), label_dict=self.label_eng_dict, eng_dict=self._reverse_dict['eng_map_p_dict'], pc_line=None, mode=mode)
                     if sample_list is None:
                         continue
                     yield sample_list
@@ -176,8 +189,8 @@ class MyDataReader(object):
                 for line in f:
                     pc_line = f_pc.readline()
                     # 对文件每一行生成数据
-                    sample_list = self._get_feed_iterator(line.strip(), label_dict=self.label_eng_dict,
-                                                          eng_dict=self._reverse_dict['eng_map_p_dict'], pc_line.strip(), mode=mode)
+                    sample_list = self._get_feed_iterator(line.strip(
+                    ), label_dict=self.label_eng_dict, eng_dict=self._reverse_dict['eng_map_p_dict'], pc_line=pc_line.strip(), mode=mode)
                     if sample_list is None:
                         continue
                     yield sample_list
@@ -241,7 +254,7 @@ if __name__ == '__main__':
         train_data_list_path='../data/ori_data/train_demo.json',
         dev_data_list_path='../data/ori_data/dev_demo.json',
         train_pc_file='',
-        dev_pc_file='../data/ori_data/pc_dev.txt')
+        dev_pc_file='../data/ori_data/PC_dev.txt')
 
     # prepare data reader
     train = data_generator.get_train_reader()
@@ -257,11 +270,8 @@ if __name__ == '__main__':
                 f.write(sample + '\n')
 
     test = data_generator.get_test_reader(
-        test_file_path='../data/ori_data/test_demo.json', test_pc_file='../data/ori_data/pc_test.txt')
+        test_file_path='../data/ori_data/test_demo.json', test_pc_file='../data/ori_data/PC_test.txt')
     with open("../data/SO_data/test.txt", 'w') as f:
         for sample_list in tqdm(test()):
             for sample in sample_list:
                 f.write(sample + '\n')
-
-    for key, value in data_generator.label_num_dic.items():
-        print(key, value)

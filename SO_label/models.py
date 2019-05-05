@@ -40,14 +40,16 @@ class InputExample(object):
         self.label = label
 
 
-class InputFeatures(object):
+class InputFeatures_ptr(object):
     """A single set of features of data."""
 
-    def __init__(self, input_ids, input_mask, segment_ids, label_id, ):
+    def __init__(self, input_ids, input_mask, segment_ids, label_id, sub_ptr, obj_ptr, ):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
         self.label_id = label_id
+        self.sub_ptr = sub_ptr
+        self.obj_ptr = obj_ptr
 
 
 class DataProcessor(object):
