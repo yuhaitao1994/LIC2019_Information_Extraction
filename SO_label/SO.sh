@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 
-python3 pclassification_main.py \
+python3 ptrNet_SO_main.py \
     -device_map=0 \
     -do_train=True \
     -do_eval=True \
@@ -12,4 +12,4 @@ python3 pclassification_main.py \
     -save_summary_steps=5 \
     -save_checkpoints_steps=5 \
     -filter_adam_var=False \
-    -experiment_name=pclass
+    -experiment_name=ptr_SO

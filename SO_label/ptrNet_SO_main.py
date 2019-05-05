@@ -13,7 +13,7 @@ from sklearn import metrics
 
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
-from models import create_model, InputFeatures_ptr, InputExample
+from models import create_model_ptr, InputFeatures_ptr, InputExample
 import argparse
 
 
@@ -183,8 +183,10 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
 
     tokens_a = tokenizer.tokenize(example.text_a)
 
+    over = 0
     if len(tokens_a) > max_seq_length - 2:
         tokens_a = tokens_a[0:(max_seq_length - 2)]
+        over = 1
 
     tokens = []
     segment_ids = []
@@ -236,9 +238,10 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
             sub_tail = i + len(cut) - 1
             break
     if sub_head == -1:
-        print(tokens)
-        print(sub)
-        raise ValueError
+        sub_head = sub_tail = len(tokens) - 1
+        # print(tokens)
+        # print(sub)
+        # raise ValueError
 
     for i in range(len(tokens) - 1):
         cut = tokens[i:min(i + len(obj), len(tokens) - 1)]
@@ -257,9 +260,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
             obj_tail = i + len(cut) - 1
             break
     if obj_head == -1:
-        print(tokens)
-        print(obj)
-        raise ValueError
+        obj_head = obj_tail = len(tokens) - 1
 
     label_id = label_map[example.label]
 
@@ -275,8 +276,8 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         tf.logging.info("segment_ids: %s" %
                         " ".join([str(x) for x in segment_ids]))
         tf.logging.info("label: %s (id = %d)" % (example.label, label_id))
-        tf.logging.info("pointer: %d %d %d %d" % sub_head %
-                        sub_tail % obj_head % obj_tail)
+        tf.logging.info("pointer: %d %d %d %d" %
+                        (sub_head, sub_tail, obj_head, obj_tail))
 
     feature = InputFeatures_ptr(
         input_ids=input_ids,
@@ -285,7 +286,7 @@ def convert_single_example(ex_index, example, label_list, max_seq_length, tokeni
         label_id=label_id,
         sub_ptr=[sub_head, sub_tail],
         obj_ptr=[obj_head, obj_tail])
-    return feature
+    return feature, over
 
 
 def filed_based_convert_examples_to_features(
@@ -301,14 +302,16 @@ def filed_based_convert_examples_to_features(
     :return:
     """
     writer = tf.python_io.TFRecordWriter(output_file)
+    Over = 0
     # 遍历训练数据
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             tf.logging.info("Writing example %d of %d" %
                             (ex_index, len(examples)))
         # 对于每一个训练样本,
-        feature = convert_single_example(
+        feature, over = convert_single_example(
             ex_index, example, label_list, max_seq_length, tokenizer)
+        Over += over
 
         def create_int_feature(values):
             f = tf.train.Feature(
@@ -327,6 +330,7 @@ def filed_based_convert_examples_to_features(
             features=tf.train.Features(feature=features))
         writer.write(tf_example.SerializeToString())
     writer.close()
+    print("over length:{:.5f}".format(Over / ex_index))
 
 
 def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_remainder):
@@ -335,6 +339,8 @@ def file_based_dataset(input_file, batch_size, seq_length, is_training, drop_rem
         "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
         "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
         "label_ids": tf.FixedLenFeature([], tf.int64),
+        "sub_ptr": tf.FixedLenFeature([2], tf.int64),
+        "obj_ptr": tf.FixedLenFeature([2], tf.int64)
     }
 
     def _decode_record(record, name_to_features):

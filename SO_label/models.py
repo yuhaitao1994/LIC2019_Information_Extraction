@@ -266,6 +266,13 @@ def create_model_Pclassification(bert_config, is_training, input_ids, input_mask
         return (loss, per_example_loss, logits, probabilities)
 
 
+def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_ids, labels):
+    """
+    SO labeling, 基于ptr Net
+    """
+    pass
+
+
 def decode_labels(labels, batch_size):
     new_labels = []
     for row in range(batch_size):
