@@ -56,6 +56,10 @@ def relation_embedding(relation, num_relations, dim):
     return relation_output
 
 
+def softmax_mask(val, mask):
+    return -INF * (1 - tf.cast(mask, tf.float32)) + val
+
+
 def dense(inputs, hidden, use_bias=True, scope="dense"):
     """
     全连接层
@@ -84,16 +88,16 @@ class ptr_net:
         self.keep_prob = keep_prob
         self.is_train = is_train
 
-    def __call__(self, init, match, d, mask):
+    def __call__(self, init, match, hidden, mask):
         with tf.variable_scope(self.scope):
             d_match = tf.cond(self.is_train, lambda: tf.nn.dropout(
                 match, keep_prob=self.keep_prob), lambda: match)
-            inp, logits1 = pointer(d_match, init * self.dropout_mask, d, mask)
+            inp, logits1 = pointer(d_match, init, hidden, mask)
             d_inp = tf.cond(self.is_train, lambda: tf.nn.dropout(
                 inp, keep_prob=self.keep_prob), lambda: inp)
             _, state = self.gru(d_inp, init)
             tf.get_variable_scope().reuse_variables()
-            _, logits2 = pointer(d_match, state * self.dropout_mask, d, mask)
+            _, logits2 = pointer(d_match, state, hidden, mask)
             return logits1, logits2
 
 
@@ -123,8 +127,46 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
     )
     bert_out = model.get_sequence_output()
 
+    if is_training:
+        # I.e., 0.1 dropout
+        bert_out = tf.nn.dropout(bert_out, keep_prob=0.9)
+
     # relation embedding 和 pointer network 的流程
     relation_init = relation_embedding(labels, num_labels, )
 
     # 两个pointer network，分别指向主客体，参数不重用，但是第一个的结果作为第二个的init
-    point_net = ptr_net(hidden)
+    sub_ptr_net = ptr_net(hidden=512, keep_prob=0.9,
+                          is_train=is_training, scope='sub_ptrNet')
+    obj_ptr_net = ptr_net(hidden=512, keep_prob=0.9,
+                          is_train=is_training, scope='obj_ptrNet')
+
+    sub_logits1, sub_logits2 = sub_ptr_net(
+        relation_init, bert_out, 512, input_mask)
+    obj_logits1, obj_logits2 = obj_ptr_net(
+        relation_init, bert_out, 512, input_mask)
+
+    with tf.variable_scope('loss'):
+        sub_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
+            sub_logits1), axis=2), tf.expand_dims(tf.nn.softmax(sub_logits2), axis=1))
+        sub_outer = tf.matrix_band_part(sub_outer, 0, 15)
+        sub_h_preds = tf.argmax(tf.reduce_max(sub_outer, axis=2), axis=1)
+        sub_t_preds = tf.argmax(tf.reduce_max(sub_outer, axis=1), axis=1)
+
+        obj_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
+            obj_logits1), axis=2), tf.expand_dims(tf.nn.softmax(obj_logits2), axis=1))
+        obj_outer = tf.matrix_band_part(obj_outer, 0, 15)
+        obj_h_preds = tf.argmax(tf.reduce_max(obj_outer, axis=2), axis=1)
+        obj_t_preds = tf.argmax(tf.reduce_max(obj_outer, axis=1), axis=1)
+
+        loss_s_h = tf.nn.softmax_cross_entropy_with_logits_v2(
+            logits=sub_logits1, labels=tf.stop_gradient(sub_ptr[:, 0]))
+        loss_s_t = tf.nn.softmax_cross_entropy_with_logits_v2(
+            logits=sub_logits2, labels=tf.stop_gradient(sub_ptr[:, 1]))
+        loss_o_h = tf.nn.softmax_cross_entropy_with_logits_v2(
+            logits=obj_logits1, labels=tf.stop_gradient(obj_ptr[:, 0]))
+        loss_o_t = tf.nn.softmax_cross_entropy_with_logits_v2(
+            logits=obj_logits2, labels=tf.stop_gradient(obj_ptr[:, 1]))
+
+        loss = tf.reduce_mean(loss_s_h + loss_s_t + loss_o_h + loss_o_t)
+
+        return (loss, sub_h_preds, sub_t_preds, obj_h_preds, obj_t_preds)
