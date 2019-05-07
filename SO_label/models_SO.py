@@ -266,11 +266,32 @@ def create_model_Pclassification(bert_config, is_training, input_ids, input_mask
         return (loss, per_example_loss, logits, probabilities)
 
 
-def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_ids, labels):
+def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_ids, labels, sub_ptr, obj_ptr, num_labels):
     """
     SO labeling, 基于ptr Net
     """
-    pass
+    def relation_embedding(relation, num_relations, dim):
+        """
+        relation embedding
+        """
+        with tf.variable_scope("relation_embedding"):
+            relation_embedding = tf.get_variable('relation_matrix', shape=[num_relations, dim],
+                                                 dtype=tf.float32, initializer=tf.contrib.layers.xavier_initializer(), trainable=True)
+            relation_output = tf.nn.embedding_lookup(
+                relation_embedding, relation)
+        return relation_output
+
+    # 首先使用bert的输出作为embedding
+    model = modeling.BertModel(
+        config=bert_config,
+        is_training=is_training,
+        input_ids=input_ids,
+        input_mask=input_mask,
+        token_type_ids=segment_ids,
+    )
+    bert_out = model.get_sequence_output()
+
+    # relation embedding 和 pointer network 的流程
 
 
 def decode_labels(labels, batch_size):

@@ -475,11 +475,15 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
             shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
         label_ids = tf.placeholder(
             shape=[None], dtype=tf.int32, name='label_ids')
+        sub_ptr = tf.placeholder(
+            shape=[None, 2], dtype=tf.int32, name='sub_ptr')
+        obj_ptr = tf.placeholder(
+            shape=[None, 2], dtype=tf.int32, name='obj_ptr')
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-        total_loss, per_example_loss, logits, probabilities = create_model(
-            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, len(label_list))
+        total_loss, per_example_loss, logits, probabilities = create_model_ptr(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, sub_ptr, obj_ptr, len(label_list))
         pred_ids = tf.argmax(probabilities, axis=-1,
                              output_type=tf.int32, name="pred_ids")
 
