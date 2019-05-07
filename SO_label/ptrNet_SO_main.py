@@ -13,7 +13,7 @@ from sklearn import metrics
 
 sys.path.append("../")
 from bert.bert_code import modeling, optimization, tokenization
-from models import create_model_ptr, InputFeatures_ptr, InputExample
+from models_SO import create_model_ptr, InputFeatures_ptr, InputExample
 import argparse
 
 
