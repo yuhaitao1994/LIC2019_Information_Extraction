@@ -482,10 +482,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         is_training = tf.get_variable(
             "is_training", shape=[], dtype=tf.bool, trainable=False)
 
-        total_loss, per_example_loss, logits, probabilities = create_model_ptr(
+        total_loss, pred_ids = create_model_ptr(
             bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, sub_ptr, obj_ptr, len(label_list))
-        pred_ids = tf.argmax(probabilities, axis=-1,
-                             output_type=tf.int32, name="pred_ids")
 
         # 优化器
         train_op = optimization.create_optimizer(
@@ -521,9 +519,11 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
         for go in range(1, num_train_steps + 1):
             # feed
             train_batch = sess.run(train_iter)
-            loss, preds, op = sess.run([total_loss, pred_ids, train_op], feed_dict={
+            loss, op = sess.run([total_loss, train_op], feed_dict={
                 input_ids: train_batch['input_ids'], input_mask: train_batch['input_mask'],
-                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids']})
+                segment_ids: train_batch['segment_ids'], label_ids: train_batch['label_ids'],
+                sub_ptr: train_batch['sub_ptr'], obj_ptr: train_batch['obj_ptr']})
+            print(loss)
 
             if go % args.save_summary_steps == 0:
                 # 训练log
@@ -535,34 +535,35 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 验证集评估
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
                 eval_loss_total = 0.0
-                eval_preds_total = np.array([0], dtype=np.int32)
-                eval_truth_total = np.array([0], dtype=np.int32)
+                eval_preds_total = np.array([[0] * 4], dtype=np.int32)
+                eval_truth_total = np.array([[0] * 4], dtype=np.int32)
                 # 重新生成一次验证集数据
                 eval_data = eval_data.repeat()
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
                 # for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
                 # eval集太大，这样每次用全部的话太耗费时间
-                for _ in range(1000):
+                for _ in range(int(len(eval_examples) / args.batch_size) + 1):
                     # eval feed
                     eval_batch = sess.run(eval_iter)
-                    eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
+                    eval_loss, eval_preds, eval_sub, eval_obj = sess.run([total_loss, pred_ids, sub_ptr, obj_ptr], feed_dict={
                         input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+                        segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
+                        sub_ptr: eval_batch['sub_ptr'], obj_ptr: eval_batch['obj_ptr']})
                     # 统计结果
                     eval_loss_total += eval_loss
                     eval_preds_total = np.concatenate(
                         (eval_preds_total, eval_preds))
                     eval_truth_total = np.concatenate(
-                        (eval_truth_total, eval_truth))
+                        (eval_truth_total, np.concatenate((eval_sub, eval_obj), -1)))
 
                 # 处理评估结果，计算recall与f1
                 eval_preds_total = eval_preds_total[1:]
                 eval_truth_total = eval_truth_total[1:]
                 eval_f1 = metrics.f1_score(
-                    eval_truth_total, eval_preds_total, average='macro')
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_acc = metrics.accuracy_score(
-                    eval_truth_total, eval_preds_total)
-                eval_loss_aver = eval_loss_total / 1000
+                    eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
+                eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估实体关系分类的指标
 
@@ -603,18 +604,13 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     tf.logging.info("***** Running prediction*****")
     tf.logging.info("  Num examples = %d", len(predict_examples))
     tf.logging.info("  Batch size = %d", args.batch_size)
-    train_examples = processor.get_train_examples(args.data_dir)
     eval_examples = processor.get_dev_examples(args.data_dir)
-    train_file = os.path.join(args.output_dir, "train.tf_record")
     eval_file = os.path.join(args.output_dir, "eval.tf_record")
     # 生成数据集
-    train_data = file_based_dataset(input_file=train_file, batch_size=args.batch_size,
-                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     eval_data = file_based_dataset(input_file=eval_file, batch_size=args.batch_size,
                                    seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
     predict_data = file_based_dataset(input_file=predict_file, batch_size=args.batch_size,
                                       seq_length=args.max_seq_length, is_training=False, drop_remainder=False)
-    train_iter = train_data.make_one_shot_iterator().get_next()
     eval_iter = eval_data.make_one_shot_iterator().get_next()
     predict_iter = predict_data.make_one_shot_iterator().get_next()
 
@@ -635,19 +631,23 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
         segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
         label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
+        sub_ptr = tf.get_default_graph().get_tensor_by_name('sub_ptr:0')
+        obj_ptr = tf.get_default_graph().get_tensor_by_name('obj_ptr:0')
+
         sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
             'is_training:0'), tf.constant(False, dtype=tf.bool)))
-        # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
+        # 找到输出
         pred_ids = tf.get_default_graph().get_tensor_by_name('pred_ids:0')
 
         # test集预测
-        predict_total = np.array([0] * 128, dtype=np.int32)
+        predict_total = np.array([[0] * 4], dtype=np.int32)
         for _ in range(0, int(len(predict_examples) / args.batch_size) + 1):
             # predict feed
             predict_batch = sess.run(predict_iter)
             predict_res = sess.run(pred_ids, feed_dict={
                 input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
-                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids']})
+                segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids'],
+                sub_ptr: test_batch['sub_ptr'], obj_ptr: test_batch['obj_ptr']})
             predict_total = np.concatenate((predict_total, predict_res))
         # 处理评估结果，计算recall与f1
         predict_total = predict_total[1:]
@@ -658,13 +658,14 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
                 args.data_dir, 'test.txt'), predict_total)
 
         # eval集预测
-        eval_total = np.array([0], dtype=np.int32)
+        eval_total = np.array([[0] * 4], dtype=np.int32)
         for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
             # predict feed
             eval_batch = sess.run(eval_iter)
             eval_res = sess.run(pred_ids, feed_dict={
                 input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
+                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
+                sub_ptr: eval_batch['sub_ptr'], obj_ptr: eval_batch['obj_ptr']})
             eval_total = np.concatenate((eval_total, eval_res))
         # 处理评估结果，计算recall与f1
         eval_total = eval_total[1:]

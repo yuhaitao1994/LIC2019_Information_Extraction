@@ -532,7 +532,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
                 # for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
                 # eval集太大，这样每次用全部的话太耗费时间
-                for _ in range(1000):
+                for _ in range(int(len(eval_examples) / args.batch_size) + 1):
                     # eval feed
                     eval_batch = sess.run(eval_iter)
                     eval_loss, eval_preds, eval_truth = sess.run([total_loss, pred_ids, label_ids], feed_dict={
@@ -552,7 +552,7 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1), average='macro')
                 eval_acc = metrics.accuracy_score(
                     eval_truth_total.reshape(-1), eval_preds_total.reshape(-1))
-                eval_loss_aver = eval_loss_total / 1000
+                eval_loss_aver = eval_loss_total / len(eval_examples)
 
                 # 评估实体关系分类的指标
 

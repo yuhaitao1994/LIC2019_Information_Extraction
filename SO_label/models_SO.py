@@ -57,6 +57,7 @@ def relation_embedding(relation, num_relations, dim):
 
 
 def softmax_mask(val, mask):
+    INF = 1e30
     return -INF * (1 - tf.cast(mask, tf.float32)) + val
 
 
@@ -79,6 +80,7 @@ def dense(inputs, hidden, use_bias=True, scope="dense"):
             res = tf.nn.bias_add(res, b)
         # outshape就是input的最后一维变成hidden
         res = tf.reshape(res, out_shape)
+        return res
 
 
 class ptr_net:
@@ -95,10 +97,9 @@ class ptr_net:
             inp, logits1 = pointer(d_match, init, hidden, mask)
             d_inp = tf.cond(self.is_train, lambda: tf.nn.dropout(
                 inp, keep_prob=self.keep_prob), lambda: inp)
-            _, state = self.gru(d_inp, init)
             tf.get_variable_scope().reuse_variables()
-            _, logits2 = pointer(d_match, state, hidden, mask)
-            return logits1, logits2
+            ptr_out, logits2 = pointer(d_match, d_inp, hidden, mask)
+            return logits1, logits2, ptr_out
 
 
 def pointer(inputs, state, hidden, mask, scope="pointer"):
@@ -110,6 +111,7 @@ def pointer(inputs, state, hidden, mask, scope="pointer"):
         s1 = softmax_mask(tf.squeeze(s, [2]), mask)
         a = tf.expand_dims(tf.nn.softmax(s1), axis=2)
         res = tf.reduce_sum(a * inputs, axis=1)
+        res = dense(res, 128, use_bias=False, scope="res")
         return res, s1
 
 
@@ -132,7 +134,7 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
         bert_out = tf.nn.dropout(bert_out, keep_prob=0.9)
 
     # relation embedding 和 pointer network 的流程
-    relation_init = relation_embedding(labels, num_labels, )
+    relation_init = relation_embedding(labels, num_labels, 128)
 
     # 两个pointer network，分别指向主客体，参数不重用，但是第一个的结果作为第二个的init
     sub_ptr_net = ptr_net(hidden=512, keep_prob=0.9,
@@ -140,33 +142,36 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
     obj_ptr_net = ptr_net(hidden=512, keep_prob=0.9,
                           is_train=is_training, scope='obj_ptrNet')
 
-    sub_logits1, sub_logits2 = sub_ptr_net(
+    sub_logits1, sub_logits2, sub_state = sub_ptr_net(
         relation_init, bert_out, 512, input_mask)
-    obj_logits1, obj_logits2 = obj_ptr_net(
-        relation_init, bert_out, 512, input_mask)
+    obj_logits1, obj_logits2, _ = obj_ptr_net(
+        sub_state, bert_out, 512, input_mask)
 
     with tf.variable_scope('loss'):
         sub_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
             sub_logits1), axis=2), tf.expand_dims(tf.nn.softmax(sub_logits2), axis=1))
-        sub_outer = tf.matrix_band_part(sub_outer, 0, 15)
+        sub_outer = tf.matrix_band_part(sub_outer, 0, 20)
         sub_h_preds = tf.argmax(tf.reduce_max(sub_outer, axis=2), axis=1)
         sub_t_preds = tf.argmax(tf.reduce_max(sub_outer, axis=1), axis=1)
 
         obj_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
             obj_logits1), axis=2), tf.expand_dims(tf.nn.softmax(obj_logits2), axis=1))
-        obj_outer = tf.matrix_band_part(obj_outer, 0, 15)
+        obj_outer = tf.matrix_band_part(obj_outer, 0, 20)
         obj_h_preds = tf.argmax(tf.reduce_max(obj_outer, axis=2), axis=1)
         obj_t_preds = tf.argmax(tf.reduce_max(obj_outer, axis=1), axis=1)
 
         loss_s_h = tf.nn.softmax_cross_entropy_with_logits_v2(
-            logits=sub_logits1, labels=tf.stop_gradient(sub_ptr[:, 0]))
+            logits=sub_logits1, labels=tf.stop_gradient(tf.one_hot(sub_ptr[:, :1], depth=150, dtype=tf.float32)))
         loss_s_t = tf.nn.softmax_cross_entropy_with_logits_v2(
-            logits=sub_logits2, labels=tf.stop_gradient(sub_ptr[:, 1]))
+            logits=sub_logits2, labels=tf.stop_gradient(tf.one_hot(sub_ptr[:, 1:], depth=150, dtype=tf.float32)))
         loss_o_h = tf.nn.softmax_cross_entropy_with_logits_v2(
-            logits=obj_logits1, labels=tf.stop_gradient(obj_ptr[:, 0]))
+            logits=obj_logits1, labels=tf.stop_gradient(tf.one_hot(obj_ptr[:, :1], depth=150, dtype=tf.float32)))
         loss_o_t = tf.nn.softmax_cross_entropy_with_logits_v2(
-            logits=obj_logits2, labels=tf.stop_gradient(obj_ptr[:, 1]))
+            logits=obj_logits2, labels=tf.stop_gradient(tf.one_hot(obj_ptr[:, 1:], depth=150, dtype=tf.float32)))
 
         loss = tf.reduce_mean(loss_s_h + loss_s_t + loss_o_h + loss_o_t)
 
-        return (loss, sub_h_preds, sub_t_preds, obj_h_preds, obj_t_preds)
+        preds = tf.concat([tf.expand_dims(sub_h_preds, axis=1), tf.expand_dims(sub_t_preds, axis=1), tf.expand_dims(
+            obj_h_preds, axis=1), tf.expand_dims(obj_t_preds, axis=1)], axis=-1, name='pred_ids')
+
+        return (loss, preds)
