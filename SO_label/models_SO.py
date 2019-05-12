@@ -150,13 +150,13 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
     with tf.variable_scope('loss'):
         sub_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
             sub_logits1), axis=2), tf.expand_dims(tf.nn.softmax(sub_logits2), axis=1))
-        sub_outer = tf.matrix_band_part(sub_outer, 0, 20)
+        sub_outer = tf.matrix_band_part(sub_outer, 0, 15)
         sub_h_preds = tf.argmax(tf.reduce_max(sub_outer, axis=2), axis=1)
         sub_t_preds = tf.argmax(tf.reduce_max(sub_outer, axis=1), axis=1)
 
         obj_outer = tf.matmul(tf.expand_dims(tf.nn.softmax(
             obj_logits1), axis=2), tf.expand_dims(tf.nn.softmax(obj_logits2), axis=1))
-        obj_outer = tf.matrix_band_part(obj_outer, 0, 20)
+        obj_outer = tf.matrix_band_part(obj_outer, 0, 15)
         obj_h_preds = tf.argmax(tf.reduce_max(obj_outer, axis=2), axis=1)
         obj_t_preds = tf.argmax(tf.reduce_max(obj_outer, axis=1), axis=1)
 
