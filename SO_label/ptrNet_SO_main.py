@@ -402,12 +402,17 @@ def adam_filter(model_path):
         saver.save(sess, os.path.join(model_path, 'model.ckpt'))
 
 
-def result_to_pair(label_list, writer, data_file, result):
+def result_to_pair(writer, examples, data_file, result, tokenizer):
     f = open(data_file, 'r')
-    for line, prediction in zip(f, result):
+    for line, prediction, example in zip(f, result, examples):
         line = line.strip()
-        label = label_list[prediction]
-        writer.write(line + '\t' + str(label) + '\n')
+        tokens = tokenizer.tokenize(example.text_a)
+        sub = ''.join(
+            ''.join(tokens[max(0, prediction[0] - 1):prediction[1]]).split('#'))
+        obj = ''.join(
+            ''.join(tokens[max(0, prediction[2] - 1):prediction[3]]).split('#'))
+        writer.write(line + '\t' + ' '.join([str(s) for s in list(prediction)]) +
+                     '\t' + sub + '\t' + obj + '\n')
 
 
 def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_list):
@@ -637,7 +642,32 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
             'is_training:0'), tf.constant(False, dtype=tf.bool)))
         # 找到输出
-        pred_ids = tf.get_default_graph().get_tensor_by_name('pred_ids:0')
+        pred_ids = tf.get_default_graph().get_tensor_by_name('loss/pred_ids:0')
+
+        # eval集预测
+        eval_total = np.array([[0] * 4], dtype=np.int32)
+        eval_truth_total = np.array([[0] * 4], dtype=np.int32)
+        for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
+            # predict feed
+            eval_batch = sess.run(eval_iter)
+            eval_res, eval_sub, eval_obj = sess.run([pred_ids, sub_ptr, obj_ptr], feed_dict={
+                input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
+                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
+                sub_ptr: eval_batch['sub_ptr'], obj_ptr: eval_batch['obj_ptr']})
+            eval_total = np.concatenate((eval_total, eval_res))
+            eval_truth_total = np.concatenate(
+                (eval_truth_total, np.concatenate((eval_sub, eval_obj), -1)))
+        # 处理评估结果，计算recall与f1
+        eval_total = eval_total[1:]
+        eval_truth_total = eval_truth_total[1:]
+        eval_acc = metrics.accuracy_score(
+            eval_truth_total.reshape(-1), eval_total.reshape(-1))
+        print("Eval_Acc:{:.5f}".format(eval_acc))
+
+        output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
+        with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
+            result_to_pair(writer, eval_examples, os.path.join(
+                args.data_dir, 'dev.txt'), eval_total, tokenizer)
 
         # test集预测
         predict_total = np.array([[0] * 4], dtype=np.int32)
@@ -647,32 +677,15 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             predict_res = sess.run(pred_ids, feed_dict={
                 input_ids: predict_batch['input_ids'], input_mask: predict_batch['input_mask'],
                 segment_ids: predict_batch['segment_ids'], label_ids: predict_batch['label_ids'],
-                sub_ptr: test_batch['sub_ptr'], obj_ptr: test_batch['obj_ptr']})
+                sub_ptr: predict_batch['sub_ptr'], obj_ptr: predict_batch['obj_ptr']})
             predict_total = np.concatenate((predict_total, predict_res))
         # 处理评估结果，计算recall与f1
         predict_total = predict_total[1:]
         output_predict_file = os.path.join(
             args.output_dir, "prediction_test.txt")
         with codecs.open(output_predict_file, 'w', encoding='utf-8') as writer:
-            result_to_pair(label_list, writer, os.path.join(
-                args.data_dir, 'test.txt'), predict_total)
-
-        # eval集预测
-        eval_total = np.array([[0] * 4], dtype=np.int32)
-        for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
-            # predict feed
-            eval_batch = sess.run(eval_iter)
-            eval_res = sess.run(pred_ids, feed_dict={
-                input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
-                segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids'],
-                sub_ptr: eval_batch['sub_ptr'], obj_ptr: eval_batch['obj_ptr']})
-            eval_total = np.concatenate((eval_total, eval_res))
-        # 处理评估结果，计算recall与f1
-        eval_total = eval_total[1:]
-        output_eval_file = os.path.join(args.output_dir, "prediction_dev.txt")
-        with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
-            result_to_pair(label_list, writer, os.path.join(
-                args.data_dir, 'dev.txt'), eval_total)
+            result_to_pair(writer, predict_examples, os.path.join(
+                args.data_dir, 'test.txt'), predict_total, tokenizer)
 
 
 if __name__ == '__main__':
