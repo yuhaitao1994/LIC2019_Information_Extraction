@@ -248,19 +248,19 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
     f_res = open(os.path.join(result_dir, (mode + '_result.json')),
                  'w', encoding='utf-8')
     with open(golden_file, 'r') as f:
-        pre_list = f_pre.readline().strip().split()
+        pre_list = f_pre.readline().strip().split('\t')
         for line in tqdm(f):
             dic = json.loads(line.strip())
             dic_res = {"text": dic['text'], "spo_list": []}
             sentence_ori = ''.join(s.strip() for s in dic['text'].split())
             while pre_list and pre_list[0] == sentence_ori[0:len(pre_list[0])]:
-                if pre_list[4] != 'NORELATION' and pre_list[4][0:2] != 'RE':
+                if len(pre_list) == 10:
                     dic_res["spo_list"].append({
-                        "predicate": eng_label_dic[pre_list[4]],
-                        "subject": pre_list[1],
-                        "subject_type": type_dic[eng_label_dic[pre_list[4]]]['subject_type'],
-                        "object": pre_list[2],
-                        "object_type": type_dic[eng_label_dic[pre_list[4]]]['object_type']
+                        "predicate": eng_label_dic[pre_list[1]],
+                        "subject": pre_list[8],
+                        "subject_type": type_dic[eng_label_dic[pre_list[1]]]['subject_type'],
+                        "object": pre_list[9],
+                        "object_type": type_dic[eng_label_dic[pre_list[1]]]['object_type']
                     })
                 pre_list = f_pre.readline().strip().split()
             res = json.dumps(dic_res, ensure_ascii=False)
@@ -311,12 +311,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     args.predict_dir = os.path.join(
         args.predict_dir, 'SO_model_' + args.experiment_name)
-    args.result_dir = args.predict_dir
     # 生成dev和test的结果文件
     postprocess(args.golden_dir, args.predict_dir,
                 args.eng_label_dic_file, args.result_dir, has_type_dic=True)
 
     # # 计算F1
-    ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.json'),
-                       '', '', os.path.join(args.golden_dir, 'dev_data.json'))
-    print(json.dumps(ret_info))
+    # ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.json'),
+    #                    '', '', os.path.join(args.golden_dir, 'dev_data.json'))
+    # print(json.dumps(ret_info))

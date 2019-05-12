@@ -411,7 +411,7 @@ def result_to_pair(writer, examples, data_file, result, tokenizer):
             ''.join(tokens[max(0, prediction[0] - 1):prediction[1]]).split('#'))
         obj = ''.join(
             ''.join(tokens[max(0, prediction[2] - 1):prediction[3]]).split('#'))
-        writer.write(line + '\t' + ' '.join([str(s) for s in list(prediction)]) +
+        writer.write(line + '\t' + '\t'.join([str(s) for s in list(prediction)]) +
                      '\t' + sub + '\t' + obj + '\n')
 
 
