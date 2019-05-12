@@ -247,6 +247,7 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
     f_pre = open(predict_file, 'r')
     f_res = open(os.path.join(result_dir, (mode + '_result.json')),
                  'w', encoding='utf-8')
+    no_ten = 0
     with open(golden_file, 'r') as f:
         pre_list = f_pre.readline().strip().split('\t')
         for line in tqdm(f):
@@ -262,9 +263,12 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
                         "object": pre_list[9],
                         "object_type": type_dic[eng_label_dic[pre_list[1]]]['object_type']
                     })
+                else:
+                    print(pre_list)
                 pre_list = f_pre.readline().strip().split()
             res = json.dumps(dic_res, ensure_ascii=False)
             f_res.write(res + '\n')
+    print(no_ten)
     f_pre.close()
     f_res.close()
 
@@ -316,6 +320,6 @@ if __name__ == '__main__':
                 args.eng_label_dic_file, args.result_dir, has_type_dic=True)
 
     # # 计算F1
-    # ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.json'),
-    #                    '', '', os.path.join(args.golden_dir, 'dev_data.json'))
-    # print(json.dumps(ret_info))
+    ret_info = calc_pr(os.path.join(args.result_dir, 'dev_result.json'),
+                       '', '', os.path.join(args.golden_dir, 'dev_data.json'))
+    print(json.dumps(ret_info))

@@ -136,8 +136,10 @@ class MyDataReader(object):
             for spo in dic['spo_list']:
                 sample = sentence_ori
                 sample += ('\t' + label_dict[spo['predicate']])
-                sample += ('\t' + spo['subject'])
-                sample += ('\t' + spo['object'])
+                sample += ('\t' + ''.join(s.strip()
+                                          for s in spo['subject'].split()))
+                sample += ('\t' + ''.join(s.strip()
+                                          for s in spo['object'].split()))
                 sample_list.append(sample)
         else:
             item = pc_line.strip().split('\t')
@@ -154,8 +156,10 @@ class MyDataReader(object):
                         if label_dict[spo['predicate']] == label_eng:
                             sample = sentence_ori
                             sample += ('\t' + label_eng)
-                            sample += ('\t' + spo['subject'])
-                            sample += ('\t' + spo['object'])
+                            sample += ('\t' + ''.join(s.strip()
+                                                      for s in spo['subject'].split()))
+                            sample += ('\t' + ''.join(s.strip()
+                                                      for s in spo['object'].split()))
                             sample_list.append(sample)
                             break
             # 测试集
