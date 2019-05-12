@@ -568,14 +568,14 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # early stopping 与 模型保存
                 if eval_acc <= best_eval_acc:
                     patience += 1
-                    if patience >= 5:
+                    if patience >= 10:
                         print("early stoping!")
                         return
 
                 if eval_acc > best_eval_acc:
                     patience = 0
                     best_eval_acc = eval_acc
-                    saver.save(sess, os.path.join(save_dir, "model_{}_acc_{:.4f}.ckpt".format(
+                    saver.save(sess, os.path.join(save_dir, "model_{}_acc_{:.6f}.ckpt".format(
                         sess.run(tf.train.get_global_step()), best_eval_acc)))
 
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
