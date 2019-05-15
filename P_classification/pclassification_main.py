@@ -650,15 +650,23 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
 
         # eval集预测
         eval_total = np.array([[0] * 50], dtype=np.int32)
+        eval_truth_total = np.array([[0] * 50], dtype=np.int32)
         for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
             # predict feed
             eval_batch = sess.run(eval_iter)
-            eval_res = sess.run(pred_ids, feed_dict={
+            eval_res, eval_truth = sess.run([pred_ids, label_ids], feed_dict={
                 input_ids: eval_batch['input_ids'], input_mask: eval_batch['input_mask'],
                 segment_ids: eval_batch['segment_ids'], label_ids: eval_batch['label_ids']})
             eval_total = np.concatenate((eval_total, eval_res), axis=0)
+            eval_truth_total = np.concatenate(
+                (eval_truth_total, eval_truth), axis=0)
         # 处理评估结果，计算recall与f1
         eval_total = eval_total[1:]
+        eval_truth_total = eval_truth_total[1:]
+        eval_acc = metrics.accuracy_score(
+            eval_truth_total.reshape(-1), eval_total.reshape(-1))
+        print("eval_acc:{:.6f}".format(eval_acc))
+
         output_eval_file = os.path.join(args.output_dir, "PC_dev.txt")
         with codecs.open(output_eval_file, 'w', encoding='utf-8') as writer:
             result_to_pair(label_list, writer, os.path.join(
