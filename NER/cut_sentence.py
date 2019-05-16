@@ -91,7 +91,7 @@ if __name__ == '__main__':
                         default='../data/NER_data/dev.txt')
     parser.add_argument('--test_data', type=str,
                         default='../data/NER_data/test.txt')
-    parser.add_argument('--max_seq_length', type=int, default=126)
+    parser.add_argument('--max_seq_length', type=int, default=148)
     args = parser.parse_args()
 
     print('cut train data to max sequence length:{}'.format(args.max_seq_length))
