@@ -45,9 +45,8 @@ class BLSTM_CRF(object):
         blstm-crf网络
         :return:
         """
-        if self.is_training:
-            # lstm input dropout rate i set 0.9 will get best score
-            self.embedded_chars = tf.nn.dropout(self.embedded_chars, self.dropout_rate)
+        self.embedded_chars = tf.cond(self.is_training, lambda: tf.nn.dropout(
+            self.embedded_chars, self.dropout_rate), lambda: self.embedded_chars)
 
         if crf_only:
             logits = self.project_crf_layer(self.embedded_chars)
@@ -59,7 +58,8 @@ class BLSTM_CRF(object):
         # crf
         loss, trans = self.crf_layer(logits)
         # CRF decode, pred_ids 是一条最大概率的标注路径
-        pred_ids, _ = crf.crf_decode(potentials=logits, transition_params=trans, sequence_length=self.lengths)
+        pred_ids, _ = crf.crf_decode(
+            potentials=logits, transition_params=trans, sequence_length=self.lengths)
         return (loss, logits, trans, pred_ids)
 
     def _witch_cell(self):
@@ -82,8 +82,10 @@ class BLSTM_CRF(object):
         cell_fw = self._witch_cell()
         cell_bw = self._witch_cell()
         if self.dropout_rate is not None:
-            cell_bw = rnn.DropoutWrapper(cell_bw, output_keep_prob=self.dropout_rate)
-            cell_fw = rnn.DropoutWrapper(cell_fw, output_keep_prob=self.dropout_rate)
+            cell_bw = rnn.DropoutWrapper(
+                cell_bw, output_keep_prob=self.dropout_rate)
+            cell_fw = rnn.DropoutWrapper(
+                cell_fw, output_keep_prob=self.dropout_rate)
         return cell_fw, cell_bw
 
     def blstm_layer(self, embedding_chars):
@@ -94,8 +96,10 @@ class BLSTM_CRF(object):
         with tf.variable_scope('rnn_layer'):
             cell_fw, cell_bw = self._bi_dir_rnn()
             if self.num_layers > 1:
-                cell_fw = rnn.MultiRNNCell([cell_fw] * self.num_layers, state_is_tuple=True)
-                cell_bw = rnn.MultiRNNCell([cell_bw] * self.num_layers, state_is_tuple=True)
+                cell_fw = rnn.MultiRNNCell(
+                    [cell_fw] * self.num_layers, state_is_tuple=True)
+                cell_bw = rnn.MultiRNNCell(
+                    [cell_bw] * self.num_layers, state_is_tuple=True)
 
             outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, embedding_chars,
                                                          dtype=tf.float32)
@@ -115,7 +119,8 @@ class BLSTM_CRF(object):
 
                 b = tf.get_variable("b", shape=[self.hidden_unit], dtype=tf.float32,
                                     initializer=tf.zeros_initializer())
-                output = tf.reshape(lstm_outputs, shape=[-1, self.hidden_unit * 2])
+                output = tf.reshape(
+                    lstm_outputs, shape=[-1, self.hidden_unit * 2])
                 hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))
 
             # project to score of tags

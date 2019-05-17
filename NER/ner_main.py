@@ -622,23 +622,44 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     with tf.Session(config=sess_config) as sess:
         # 从文件中读取计算图
         save_dir = os.path.join(args.output_dir, 'model')
-        saver = tf.train.import_meta_graph(
-            tf.train.latest_checkpoint(save_dir) + ".meta")
-        sess.run(tf.global_variables_initializer())
+        # saver = tf.train.import_meta_graph(
+        #     tf.train.latest_checkpoint(save_dir) + ".meta")
+        # sess.run(tf.global_variables_initializer())
         # 打印张量名
         # tensor_list = [
         #     n.name for n in tf.get_default_graph().as_graph_def().node if 'older' in n.name]
         # print(tensor_list)
+        # 构造模型
+        input_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_ids')
+        input_mask = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_mask')
+        segment_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
+        label_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='label_ids')
+        is_training = tf.get_variable(
+            "is_training", shape=[], dtype=tf.bool, trainable=False)
+
+        total_loss, logits, trans, pred_ids = create_model(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids,
+            len(label_list), False, args.dropout_rate, args.lstm_size, args.cell, args.num_layers)
+
+        sess.run(tf.global_variables_initializer())
+
+        saver = tf.train.Saver()
         saver.restore(sess, tf.train.latest_checkpoint(save_dir))
         # 通过张量名获取模型的占位符和参数
-        input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
-        input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
-        segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
-        label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
-        sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
-            'is_training:0'), tf.constant(False, dtype=tf.bool)))
-        # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
-        pred_ids = tf.get_default_graph().get_tensor_by_name('ReverseSequence_1:0')
+        # input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
+        # input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
+        # segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
+        # label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
+        # sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
+        #     'is_training:0'), tf.constant(False, dtype=tf.bool)))
+        # # 找到crf输出, 注意其名称在crf_decode源码中, 可以在graph中查到
+        # pred_ids = tf.get_default_graph().get_tensor_by_name('ReverseSequence_1:0')
+
+        sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
         # test集预测
         predict_total = np.array([[0] * 150], dtype=np.int32)

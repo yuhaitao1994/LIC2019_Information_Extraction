@@ -33,7 +33,8 @@ def get_args_parser():
                         help='train, dev and test data dir')
     parser.add_argument('-bert_config_file', type=str,
                         default=os.path.join(bert_path, 'bert_config.json'))
-    parser.add_argument('-output_dir', type=str, default=os.path.join(root_path, 'data'), help='model_dir')
+    parser.add_argument('-output_dir', type=str,
+                        default=os.path.join(root_path, 'data'), help='model_dir')
     parser.add_argument('-init_checkpoint', type=str, default=os.path.join(bert_path, 'bert_model.ckpt'),
                         help='Initial checkpoint (usually from a pre-trained BERT model).')
     parser.add_argument('-vocab_file', type=str, default=os.path.join(bert_path, 'vocab.txt'),
@@ -52,7 +53,7 @@ def get_args_parser():
                         help='The initial learning rate for Adam.')
     parser.add_argument('-num_train_epochs', type=float, default=15,
                         help='Total number of training epochs to perform.')
-    parser.add_argument('-dropout_rate', type=float, default=0.5,
+    parser.add_argument('-dropout_rate', type=float, default=0.8,
                         help='Dropout rate')
     parser.add_argument('-clip', type=float, default=0.5,
                         help='Gradient clip')
