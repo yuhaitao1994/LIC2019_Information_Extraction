@@ -623,26 +623,51 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
     with tf.Session(config=sess_config) as sess:
         # 从文件中读取计算图
         save_dir = os.path.join(args.output_dir, 'model')
-        saver = tf.train.import_meta_graph(
-            tf.train.latest_checkpoint(save_dir) + ".meta")
-        sess.run(tf.global_variables_initializer())
+        # saver = tf.train.import_meta_graph(
+        #     tf.train.latest_checkpoint(save_dir) + ".meta")
+        # sess.run(tf.global_variables_initializer())
         # 打印张量名
         # tensor_list = [
-        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'older' in n.name]
+        #     n.name for n in tf.get_default_graph().as_graph_def().node if 'keep_prob' in n.name]
         # print(tensor_list)
-        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
-        # 通过张量名获取模型的占位符和参数
-        input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
-        input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
-        segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
-        label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
-        sub_ptr = tf.get_default_graph().get_tensor_by_name('sub_ptr:0')
-        obj_ptr = tf.get_default_graph().get_tensor_by_name('obj_ptr:0')
 
-        sess.run(tf.assign(tf.get_default_graph().get_tensor_by_name(
-            'is_training:0'), tf.constant(False, dtype=tf.bool)))
+        # 构造模型
+        input_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_ids')
+        input_mask = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='input_mask')
+        segment_ids = tf.placeholder(
+            shape=[None, args.max_seq_length], dtype=tf.int32, name='segment_ids')
+        label_ids = tf.placeholder(
+            shape=[None], dtype=tf.int32, name='label_ids')
+        sub_ptr = tf.placeholder(
+            shape=[None, 2], dtype=tf.int32, name='sub_ptr')
+        obj_ptr = tf.placeholder(
+            shape=[None, 2], dtype=tf.int32, name='obj_ptr')
+        is_training = tf.get_variable(
+            "is_training", shape=[], dtype=tf.bool, trainable=False)
+
+        total_loss, pred_ids = create_model_ptr(
+            bert_config, is_training, input_ids, input_mask, segment_ids, label_ids, sub_ptr, obj_ptr, len(label_list))
+
+        sess.run(tf.global_variables_initializer())
+
+        saver = tf.train.Saver()
+        saver.restore(sess, tf.train.latest_checkpoint(save_dir))
+        # # 通过张量名获取模型的占位符和参数
+        # input_ids = tf.get_default_graph().get_tensor_by_name('input_ids:0')
+        # input_mask = tf.get_default_graph().get_tensor_by_name('input_mask:0')
+        # segment_ids = tf.get_default_graph().get_tensor_by_name('segment_ids:0')
+        # label_ids = tf.get_default_graph().get_tensor_by_name('label_ids:0')
+        # sub_ptr = tf.get_default_graph().get_tensor_by_name('sub_ptr:0')
+        # obj_ptr = tf.get_default_graph().get_tensor_by_name('obj_ptr:0')
+
+        # is_t = tf.get_default_graph().get_tensor_by_name('is_training:0')
+
         # 找到输出
-        pred_ids = tf.get_default_graph().get_tensor_by_name('loss/pred_ids:0')
+        # pred_ids = tf.get_default_graph().get_tensor_by_name('loss/pred_ids:0')
+
+        sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
 
         # eval集预测
         eval_total = np.array([[0] * 4], dtype=np.int32)

@@ -129,9 +129,8 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
     )
     bert_out = model.get_sequence_output()
 
-    if is_training:
-        # I.e., 0.1 dropout
-        bert_out = tf.nn.dropout(bert_out, keep_prob=0.9)
+    bert_out = tf.cond(is_training, lambda: tf.nn.dropout(
+        bert_out, keep_prob=0.9), lambda: bert_out)
 
     # relation embedding 和 pointer network 的流程
     relation_init = relation_embedding(labels, num_labels, 128)

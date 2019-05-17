@@ -180,6 +180,8 @@ def calc_pr(predict_filename, alias_filename, location_filename,
         return ret_info
 
     # evaluation
+    wrong_file = open('./wrong.txt', 'w')
+    right_file = open('./right.txt', 'w')
     alias_dict = {}
     loc_dict = {}
     correct_sum, predict_sum, recall_sum = 0.0, 0.0, 0.0
@@ -192,6 +194,12 @@ def calc_pr(predict_filename, alias_filename, location_filename,
         for spo in predict_spo_set:
             if is_spo_correct(spo, golden_spo_set, alias_dict, loc_dict):
                 correct_sum += 1
+                right_file.write(str(spo) + '\n')
+            else:
+                wrong_file.write(str(spo) + '\n')
+    wrong_file.close()
+    right_file.close()
+
     print(sys.stderr, 'correct spo num = ', correct_sum)
     print(sys.stderr, 'submitted spo num = ', predict_sum)
     print(sys.stderr, 'golden set spo num = ', recall_sum)
@@ -256,11 +264,13 @@ def generate_result_file(golden_file, predict_file, eng_label_dic, type_dic, res
             sentence_ori = ''.join(s.strip() for s in dic['text'].split())
             while pre_list and pre_list[0] == sentence_ori[0:len(pre_list[0])]:
                 if len(pre_list) == 10:
+                    sub = pre_list[8]
+                    obj = pre_list[9]
                     dic_res["spo_list"].append({
                         "predicate": eng_label_dic[pre_list[1]],
-                        "subject": pre_list[8],
+                        "subject": sub,
                         "subject_type": type_dic[eng_label_dic[pre_list[1]]]['subject_type'],
-                        "object": pre_list[9],
+                        "object": obj,
                         "object_type": type_dic[eng_label_dic[pre_list[1]]]['object_type']
                     })
                 else:
