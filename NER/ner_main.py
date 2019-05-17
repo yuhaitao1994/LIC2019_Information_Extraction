@@ -523,8 +523,8 @@ def train_and_eval(args, processor, tokenizer, bert_config, sess_config, label_l
                 # 验证集评估
                 sess.run(tf.assign(is_training, tf.constant(False, dtype=tf.bool)))
                 eval_loss_total = 0.0
-                eval_preds_total = np.array([[0] * 128], dtype=np.int32)
-                eval_truth_total = np.array([[0] * 128], dtype=np.int32)
+                eval_preds_total = np.array([[0] * 150], dtype=np.int32)
+                eval_truth_total = np.array([[0] * 150], dtype=np.int32)
                 # 重新生成一次验证集数据
                 eval_data = eval_data.repeat()
                 eval_iter = eval_data.make_one_shot_iterator().get_next()
@@ -641,7 +641,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         pred_ids = tf.get_default_graph().get_tensor_by_name('ReverseSequence_1:0')
 
         # test集预测
-        predict_total = np.array([[0] * 128], dtype=np.int32)
+        predict_total = np.array([[0] * 150], dtype=np.int32)
         for _ in range(0, int(len(predict_examples) / args.batch_size) + 1):
             # predict feed
             predict_batch = sess.run(predict_iter)
@@ -657,7 +657,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
             result_to_pair(args, writer, predict_examples, predict_total)
 
         # train集预测
-        train_total = np.array([[0] * 128], dtype=np.int32)
+        train_total = np.array([[0] * 150], dtype=np.int32)
         for _ in range(0, int(len(train_examples) / args.batch_size) + 1):
             # predict feed
             train_batch = sess.run(train_iter)
@@ -675,7 +675,7 @@ def predict(args, processor, tokenizer, bert_config, sess_config, label_list):
         print(''.join(train_score))
 
         # eval集预测
-        eval_total = np.array([[0] * 128], dtype=np.int32)
+        eval_total = np.array([[0] * 150], dtype=np.int32)
         for _ in range(0, int(len(eval_examples) / args.batch_size) + 1):
             # predict feed
             eval_batch = sess.run(eval_iter)
