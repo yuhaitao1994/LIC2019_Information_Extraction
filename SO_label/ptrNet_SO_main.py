@@ -1,6 +1,6 @@
 # -*- coding:utf-8 -*-
 """
-RC主函数
+使用Bert + Pointer Net做主客体的标注
 """
 import collections
 import os
