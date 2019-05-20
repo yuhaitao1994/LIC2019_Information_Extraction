@@ -174,10 +174,3 @@ def create_model_ptr(bert_config, is_training, input_ids, input_mask, segment_id
             obj_h_preds, axis=1), tf.expand_dims(obj_t_preds, axis=1)], axis=-1, name='pred_ids')
 
         return (loss, preds)
-
-
-def create_model_SO():
-    """
-    主客体标注模型，使用bert + relation embedding + CRF
-    """
-    pass
