@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """
-使用Bert + Pointer Net做主客体的标注
+Subject and Object labeling with Bert + Pointer Net
+@author:yuhaitao
 """
 import collections
 import os

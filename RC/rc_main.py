@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """
-RC主函数
+Relation Classification with Bert, two entities are synthesized with textB.
+@author:yuhaitao
 """
 import collections
 import os

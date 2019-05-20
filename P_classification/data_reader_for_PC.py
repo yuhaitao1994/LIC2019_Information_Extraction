@@ -1,6 +1,7 @@
 # coding=utf-8
 """
-数据读取预处理，定义一个data reader类，生成CSV文件，供bert的data processor读取
+Data processing for P-classification.
+@author: yuhaitao
 """
 import json
 import os

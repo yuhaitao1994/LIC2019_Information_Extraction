@@ -1,6 +1,7 @@
 # coding=utf-8
 """
-数据读取预处理，定义一个data reader类，生成CSV文件，供bert的data processor读取
+Data read preprocessing, define a data reader class, generate a CSV file for bert's data processor to read.
+@author: yuhaitao
 """
 import json
 import os

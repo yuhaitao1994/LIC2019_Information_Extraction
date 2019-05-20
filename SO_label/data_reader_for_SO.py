@@ -1,6 +1,7 @@
 # coding=utf-8
 """
-数据读取预处理，SO label
+Data processing for SO-labeling.
+@author: yuhaitao
 """
 import json
 import os

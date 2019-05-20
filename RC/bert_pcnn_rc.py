@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 """
-bert + pcnn
+Relation Classification with Bert + PCNN, Bert for embedding, PCNN for RC.
+@author: yuhaitao
 """
 import collections
 import os

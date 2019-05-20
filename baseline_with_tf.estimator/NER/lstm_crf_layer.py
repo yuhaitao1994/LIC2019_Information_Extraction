@@ -2,7 +2,6 @@
 
 """
 bert-blstm-crf layer
-@Author:Macan
 """
 
 import tensorflow as tf

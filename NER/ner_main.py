@@ -1,6 +1,9 @@
 # -*- coding:utf-8 -*-
 """
-主函数
+Bert + CRF for name entity recognition
+Learn from: https://github.com/macanv/BERT-BiLSTM-CRF-NER
+Without tf.estimator, I used sess.run()
+@author: yuhaitao
 """
 import collections
 import os

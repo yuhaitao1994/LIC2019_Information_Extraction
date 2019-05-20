@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-后处理，生成结果，计算F1
+Postpreccessing
+@author:yuhaitao
 """
 import sys
 import json

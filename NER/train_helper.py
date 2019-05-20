@@ -1,12 +1,5 @@
 # -*- coding: utf-8 -*-
 
-"""
-
- @Time    : 2019/1/30 14:01
- @Author  : MaCan (ma_cancan@163.com)
- @File    : train_helper.py
-"""
-
 import argparse
 import os
 

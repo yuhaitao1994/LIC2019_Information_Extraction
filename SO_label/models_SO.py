@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 
 """
- 一些公共模型代码
- @Time    : 2019/1/30 12:46
- @Author  : MaCan (ma_cancan@163.com)
- @File    : models.py
+Model for SO-labeling.
+@author:yuhaitao
 """
 
 import sys

@@ -1,6 +1,8 @@
 # -*- coding:utf-8 -*-
 """
-RC主函数
+P-classification with Bert + Multi-label classification.
+See: https://github.com/baidu/information-extraction
+@author: yuhaitao
 """
 import collections
 import os

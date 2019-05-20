@@ -1,11 +1,8 @@
 #! usr/bin/env python3
 # -*- coding:utf-8 -*-
 """
-Copyright 2018 The Google AI Language Team Authors.
-BASED ON Google_BERT.
-reference from :zhoukaiyin/
-
-@Author:Macan
+Bert (textA + testB) for Relation Extraction.
+@author: yuhaitao
 """
 
 from __future__ import absolute_import
